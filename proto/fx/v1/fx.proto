@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// Package fx.v1 is the contract between the FX service that prices a trade and
+// the services that spend the resulting quote.
+package fx.v1;
+
+import "google/protobuf/timestamp.proto";
+import "money/v1/money.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/fx/v1;fxv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.fx.v1";
+option java_outer_classname = "FxProto";
+
+service FxService {
+  // GetQuote prices a trade and reserves the price until the quote expires.
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse) {}
+  // GetRate returns an indicative mid rate. It is not honourable — it carries
+  // no quote id, so nothing can be posted against it.
+  rpc GetRate(GetRateRequest) returns (GetRateResponse) {}
+  // ListCurrencies exposes the supported-currency registry for clients.
+  rpc ListCurrencies(ListCurrenciesRequest) returns (ListCurrenciesResponse) {}
+}
+
+// A quote is requested by fixing exactly one side of the trade: either how much
+// the customer will sell, or how much they want to buy. Fixing both would
+// over-determine the trade and leave the rate with nowhere to go.
+message GetQuoteRequest {
+  oneof side {
+    money.v1.Money sell = 1;  // customer gives up this exact amount
+    money.v1.Money buy = 2;   // customer receives this exact amount
+  }
+  // ISO 4217 alpha-3 for the other side of the pair.
+  string counter_currency = 3;
+  // Idempotency key. Repeating a request with the same key returns the same
+  // quote rather than pricing a second one.
+  string idempotency_key = 4;
+}
+
+message GetQuoteResponse {
+  Quote quote = 1;
+}
+
+// Quote is a firm, expiring price. Rate is the number postings must use;
+// mid_rate and spread_bps are carried so the margin can be reconstructed later
+// without re-querying the rate provider.
+message Quote {
+  string id = 1;
+  money.v1.Money sell = 2;
+  money.v1.Money buy = 3;
+  // Decimal strings, not doubles. A rate that has been through a float is a
+  // rate that is no longer exactly the rate that was quoted.
+  string mid_rate = 4;
+  string rate = 5;
+  int32 spread_bps = 6;
+  string rate_source = 7;
+  string source_rate_id = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+message GetRateRequest {
+  string sell_currency = 1;
+  string buy_currency = 2;
+}
+
+message GetRateResponse {
+  string sell_currency = 1;
+  string buy_currency = 2;
+  string mid_rate = 3;  // decimal string
+  string rate_source = 4;
+  google.protobuf.Timestamp as_of = 5;
+}
+
+message ListCurrenciesRequest {}
+
+message ListCurrenciesResponse {
+  repeated money.v1.Currency currencies = 1;
+}

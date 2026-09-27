@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// Package money.v1 defines what an amount is on the wire.
+//
+// Every service that moves value speaks this message. An amount is never a bare
+// int64 in a Swiftbon contract: a number with no currency attached is a number
+// whose meaning depends on which service is reading it, and that ambiguity is
+// exactly how a CAD amount ends up debited from a USD balance.
+package money.v1;
+
+option go_package = "swiftbon.com/shared/proto/gen/go/money/v1;moneyv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.money.v1";
+option java_outer_classname = "MoneyProto";
+
+// Money is an exact amount in the minor units of a currency.
+// {amount: 12345, currency: "CAD"} is $123.45.
+message Money {
+  // Amount in minor units. Integer, always: there is no float amount anywhere
+  // in this estate. All five launch currencies have exponent 2, so this maps
+  // directly onto the existing BIGINT columns and int64 fields.
+  int64 amount = 1;
+
+  // ISO 4217 alpha-3, uppercase. Required. Never defaulted — an amount that
+  // arrives without a currency is a validation failure, not a CAD amount.
+  string currency = 2;
+}
+
+// Currency is the registry entry for a currency, for discovery endpoints.
+message Currency {
+  string code = 1;      // ISO 4217 alpha-3, uppercase
+  int32 exponent = 2;   // decimal places in the minor unit
+  string name = 3;
+}

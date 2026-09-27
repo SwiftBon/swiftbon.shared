@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+// Package postings.v1 is the ledger contract.
+//
+// Moved here from swiftbon.postings.service/pkg/grpcserver/postings.proto,
+// which was also copied into billers, flights, juice, paylony and paystack.
+//
+// Field names are snake_case here where the original used PascalCase. This is a
+// rename only: field numbers are unchanged, so the wire format is identical,
+// and protoc-gen-go derives the same exported Go identifiers either way, so no
+// Go call site changes because of it.
+package postings.v1;
+
+import "google/protobuf/timestamp.proto";
+import "money/v1/money.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/postings/v1;postingsv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.postings.v1";
+option java_outer_classname = "PostingsProto";
+
+service Postings {
+  rpc ProcessSingleTransfer(ProcessTransferRequest) returns (BaseResponse) {}
+  rpc PostTransaction(PostingRequest) returns (BaseResponse) {}
+  rpc ReverseTransaction(ReversalRequest) returns (BaseResponse) {}
+  rpc GetTransactionByReference(GetTransactionByReferenceRequest) returns (BaseResponse) {}
+}
+
+message ProcessTransferRequest {
+  reserved 5;                   // was: int64 Amount — no currency attached
+  reserved "Amount";
+
+  string recipient_account_number = 1;
+  string sender_account_number = 2;
+  string sender_account_name = 3;
+  string entry_code = 4;
+  string narration = 6;
+  int32 posting_type = 7;
+  int32 transaction_method = 8;
+  string instrument_number = 9;
+  string merchant = 10;
+  int32 tag_id = 11;
+  int32 category_id = 12;
+  TransactionFee fee = 13;
+
+  money.v1.Money amount = 14;
+
+  // Set when this transfer settles against a quoted FX price. The postings
+  // service must re-check the quote is unexpired before it posts: a quote that
+  // has lapsed between pricing and posting is a rate nobody agreed to.
+  optional string fx_quote_id = 15;
+}
+
+message TransactionFee {
+  reserved 1;                   // was: int64 Amount
+  reserved "Amount";
+
+  string fee_account = 2;
+  money.v1.Money amount = 3;
+}
+
+message GetTransactionByReferenceRequest {
+  string reference_number = 1;
+}
+
+message PostingRequest {
+  bool force_debit = 1;
+  google.protobuf.Timestamp financial_date = 2;
+  string instrument_number = 3;
+  string reference_number = 4;
+  int32 posting_type = 5;
+  int32 transaction_method = 6;
+  string merchant = 7;
+  int32 tag_id = 8;
+  int32 category_id = 9;
+  repeated PostingRecord posting_records = 10;
+  PostingMetadata metadata = 11;
+
+  // The quote this posting settles against, when it crosses currencies.
+  optional string fx_quote_id = 12;
+}
+
+message PostingRecord {
+  reserved 3;                   // was: int64 Amount
+  reserved "Amount";
+
+  string account_number = 1;
+  string account_name = 2;
+  string narration = 4;
+  string entry_code = 5;
+  string branch_id = 6;
+  int32 posting_record_type = 7;
+  int32 account_category = 8;
+
+  money.v1.Money amount = 12;
+}
+
+message PostingMetadata {
+  reserved 7;                   // was: int64 Fee
+  reserved "Fee";
+
+  string sender_name = 1;
+  string sender_account_number = 2;
+  string sender_bank = 3;
+  string recipient_name = 4;
+  string recipient_account_number = 5;
+  string recipient_bank = 6;
+
+  money.v1.Money fee = 8;
+}
+
+message ReversalRequest {
+  string reference_number = 1;
+}
+
+message ReversalResponse {
+  string reversal_reference_number = 1;
+}
+
+message BaseResponse {
+  string response_code = 1;
+  string response_description = 2;
+  string response_message = 3;
+}

@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+// Package seahorse.v1 is the event bus contract.
+//
+// Moved here from seahorse/pkg/grpcserver/seahorse.proto, which was copied into
+// account, bani, communication, flights, juice, kyc, paylony, paystack,
+// postings and billers.
+//
+// Carried over unchanged apart from snake_case field names; field numbers and
+// therefore the wire format are identical.
+package seahorse.v1;
+
+option go_package = "swiftbon.com/shared/proto/gen/go/seahorse/v1;seahorsev1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.seahorse.v1";
+option java_outer_classname = "SeahorseProto";
+
+service Seahorse {
+  rpc RegisterConsumer(RegisterConsumerRequest) returns (Empty) {}
+  rpc ShutdownConsumer(ShutdownRequest) returns (Empty) {}
+  rpc PublishEvent(PublishRequest) returns (Empty) {}
+
+  // ConsumeEvent is implemented by every consumer, not by seahorse. Seahorse
+  // dials the address the consumer gave it at RegisterConsumer time and calls
+  // this.
+  rpc ConsumeEvent(Event) returns (Empty) {}
+
+  // MarkEventAsProcessed acknowledges a delivery. Delivery is at-least-once, so
+  // a consumer may see the same event twice and must be idempotent.
+  rpc MarkEventAsProcessed(QueueRequest) returns (Empty) {}
+
+  // RejectEvent tells seahorse the consumer will never be able to handle this
+  // event — an unrecognised topic, an unparseable payload, a schema version it
+  // does not understand. The event moves to a terminal rejected state and stops
+  // consuming retries. Use MarkEventAsProcessed for success and a plain gRPC
+  // error for "try me again".
+  rpc RejectEvent(RejectRequest) returns (Empty) {}
+}
+
+message RegisterConsumerRequest {
+  string consumer_group = 1;
+  string server = 2;
+  repeated ConsumerTopic topics = 3;
+}
+
+message ConsumerTopic {
+  string name = 1;
+  int32 ttl = 2;
+}
+
+message PublishRequest {
+  string topic = 1;
+  string message = 2;
+
+  // schema_version is the version of the payload carried in `message`. Absent
+  // or 0 means legacy and is treated as 1, so publishers that predate this
+  // field keep working with no change. A publish below the topic's
+  // min_supported_version is rejected with FailedPrecondition.
+  int32 schema_version = 3;
+
+  // publisher is the originating service, for tracing. Optional.
+  string publisher = 4;
+}
+
+// Event is the delivery envelope. Fields 1-3 are the original ConsumeRequest,
+// unchanged and at the same field numbers, so a consumer still running the old
+// generated code decodes a v2 envelope correctly and simply does not see the
+// new fields.
+//
+// This message was named ConsumeRequest before the envelope gained a version.
+// The rename is source-only; the wire format is identical.
+message Event {
+  string id = 1;
+  string topic = 2;
+  string message = 3;
+
+  // schema_version of the payload in `message`. 0 means the publisher predates
+  // envelope versioning — treat it as 1. Read this instead of sniffing which
+  // fields happen to be present in the JSON.
+  int32 schema_version = 4;
+
+  // published_at is RFC 3339, set by seahorse when the event was accepted.
+  string published_at = 5;
+
+  // publisher is the service that published the event, for tracing.
+  string publisher = 6;
+}
+
+message Empty {}
+
+message ShutdownRequest {
+  string consumer_group = 1;
+}
+
+message QueueRequest {
+  string queue_id = 1;
+}
+
+message RejectRequest {
+  string queue_id = 1;
+
+  // reason is recorded against the queue row so a terminally rejected event can
+  // be diagnosed from /queue/exhausted without reading consumer logs.
+  string reason = 2;
+}
