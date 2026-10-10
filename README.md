@@ -285,12 +285,33 @@ The canonical files now live here, namespaced and versioned:
 
 ```
 proto/money/v1/money.proto        Money, Currency on the wire
-proto/fx/v1/fx.proto              quote request/response
+proto/fx/v1/fx.proto              Quote, GetQuote, ConsumeQuote, GetRates
 proto/account/v1/account.proto    moved from account.service
 proto/postings/v1/postings.proto  moved from postings.service
 proto/seahorse/v1/seahorse.proto  moved from seahorse
 proto/gen/go/...                  generated Go, committed
 ```
+
+### `fx.v1`
+
+`FxService` is what `swiftbon.fx.service` serves and `postings.service` calls:
+
+| RPC | |
+| --- | --- |
+| `Quote` | Price a trade, fixing exactly one side (`sell` or `buy`), and issue a single-use quote. |
+| `GetQuote` | Fetch a quote by id, with its status (open / consumed / expired). |
+| `ConsumeQuote` | Spend a quote against a posting reference. Idempotent per reference (`replayed`). |
+| `GetRates` | Indicative customer rates for every direction. Nothing can be posted against them. |
+
+A quote's `buy` is always exactly `money.Convert(sell, buy currency, rate)`, so
+a consumer that recomputes it gets the same number. Rates are 10-place decimal
+strings. Errors are gRPC statuses carrying a `google.rpc.ErrorInfo` with domain
+`fx.swiftbon.com`; branch on its `reason` (`QUOTE_EXPIRED`, `QUOTE_CONSUMED`,
+`RATE_UNAVAILABLE`, …), never on the message. The reason table is at the top of
+the `.proto`.
+
+This replaced an earlier draft of the contract (`GetQuote` that priced, plus
+`GetRate` and `ListCurrencies`) before anything deployed against it.
 
 Money is defined once:
 
