@@ -1,7 +1,26 @@
 syntax = "proto3";
 
-// Package fx.v1 is the contract between the FX service that prices a trade and
-// the services that spend the resulting quote.
+// Package fx.v1 is the contract between swiftbon.fx.service, which prices a
+// trade, and the services that spend the resulting quote — today that is
+// swiftbon.postings.service.
+//
+// Errors are returned as gRPC statuses carrying a google.rpc.ErrorInfo detail
+// with domain "fx.swiftbon.com". The ErrorInfo reason is the stable,
+// machine-readable outcome (see the Reason comments below); its metadata
+// carries "response_code", the house BaseResponse code the HTTP API returns for
+// the same failure. Branch on the reason, never on the message text.
+//
+//   reason                   grpc code            response_code
+//   VALIDATION               INVALID_ARGUMENT     02
+//   RATE_UNAVAILABLE         UNAVAILABLE          06   no fresh rate; quoting refused
+//   SPREAD_NOT_CONFIGURED    FAILED_PRECONDITION  06
+//   QUOTE_NOT_FOUND          NOT_FOUND            06
+//   QUOTE_EXPIRED            FAILED_PRECONDITION  19
+//   QUOTE_CONSUMED           ALREADY_EXISTS       20   consumed under another reference
+//   REFERENCE_IN_USE         ALREADY_EXISTS       20   reference already consumed another quote
+//   QUOTE_LIMIT_EXCEEDED     FAILED_PRECONDITION  21
+//   DATABASE                 INTERNAL             98
+//   INTERNAL                 INTERNAL             99
 package fx.v1;
 
 import "google/protobuf/timestamp.proto";
@@ -13,43 +32,87 @@ option java_package = "com.swiftbon.fx.v1";
 option java_outer_classname = "FxProto";
 
 service FxService {
-  // GetQuote prices a trade and reserves the price until the quote expires.
+  // Quote prices a trade and issues a short-lived, single-use quote.
+  rpc Quote(QuoteRequest) returns (QuoteResponse) {}
+
+  // GetQuote fetches an issued quote, including its consumed or expired state.
   rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse) {}
-  // GetRate returns an indicative mid rate. It is not honourable — it carries
-  // no quote id, so nothing can be posted against it.
-  rpc GetRate(GetRateRequest) returns (GetRateResponse) {}
-  // ListCurrencies exposes the supported-currency registry for clients.
-  rpc ListCurrencies(ListCurrenciesRequest) returns (ListCurrenciesResponse) {}
+
+  // ConsumeQuote marks a quote spent against a posting reference. It succeeds
+  // at most once per quote: repeating it with the same reference returns the
+  // same quote with replayed = true, and any other reference is refused.
+  //
+  // Postings calls this inside its posting transaction. If that transaction
+  // later rolls back the quote stays consumed — that is the deliberate, safe
+  // direction: an unusable consumed quote costs a re-quote, a reusable one
+  // costs money.
+  rpc ConsumeQuote(ConsumeQuoteRequest) returns (ConsumeQuoteResponse) {}
+
+  // GetRates returns the current customer rate for every supported ordered
+  // pair. Indicative only: nothing can be posted against a rate, only against
+  // a quote.
+  rpc GetRates(GetRatesRequest) returns (GetRatesResponse) {}
 }
 
 // A quote is requested by fixing exactly one side of the trade: either how much
 // the customer will sell, or how much they want to buy. Fixing both would
 // over-determine the trade and leave the rate with nowhere to go.
-message GetQuoteRequest {
-  oneof side {
-    money.v1.Money sell = 1;  // customer gives up this exact amount
-    money.v1.Money buy = 2;   // customer receives this exact amount
+message QuoteRequest {
+  oneof fixed {
+    money.v1.Money sell = 1;  // customer gives up exactly this amount
+    money.v1.Money buy = 2;   // customer receives at least this amount
   }
-  // ISO 4217 alpha-3 for the other side of the pair.
+  // ISO 4217 alpha-3 for the side that is not fixed.
   string counter_currency = 3;
-  // Idempotency key. Repeating a request with the same key returns the same
-  // quote rather than pricing a second one.
-  string idempotency_key = 4;
+  // Optional. The customer the quote is priced for, for audit.
+  string customer_id = 4;
+}
+
+message QuoteResponse {
+  Quote quote = 1;
+}
+
+message GetQuoteRequest {
+  string quote_id = 1;
 }
 
 message GetQuoteResponse {
   Quote quote = 1;
 }
 
-// Quote is a firm, expiring price. Rate is the number postings must use;
+message ConsumeQuoteRequest {
+  string quote_id = 1;
+  // The posting reference the quote is spent against. Unique across all
+  // quotes: one reference can consume one quote.
+  string reference = 2;
+}
+
+message ConsumeQuoteResponse {
+  Quote quote = 1;
+  // True when the quote was already consumed by this same reference, i.e. this
+  // call was a retry. The quote is in the same state either way.
+  bool replayed = 2;
+}
+
+enum QuoteStatus {
+  QUOTE_STATUS_UNSPECIFIED = 0;
+  QUOTE_STATUS_OPEN = 1;      // unconsumed and unexpired: can be consumed
+  QUOTE_STATUS_CONSUMED = 2;
+  QUOTE_STATUS_EXPIRED = 3;   // never consumed, past its expiry
+}
+
+// Quote is a firm, expiring price. rate is the number postings must use;
 // mid_rate and spread_bps are carried so the margin can be reconstructed later
 // without re-querying the rate provider.
+//
+// buy is always exactly money.Convert(sell, buy currency, rate). A postings
+// service that recomputes it gets the same number.
 message Quote {
   string id = 1;
   money.v1.Money sell = 2;
   money.v1.Money buy = 3;
-  // Decimal strings, not doubles. A rate that has been through a float is a
-  // rate that is no longer exactly the rate that was quoted.
+  // Decimal strings with 10 decimal places, not doubles. A rate that has been
+  // through a float is a rate that is no longer exactly the rate quoted.
   string mid_rate = 4;
   string rate = 5;
   int32 spread_bps = 6;
@@ -57,23 +120,33 @@ message Quote {
   string source_rate_id = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp expires_at = 10;
+  QuoteStatus status = 11;
+  google.protobuf.Timestamp consumed_at = 12;  // unset unless consumed
+  string consumed_by_reference = 13;
+  string customer_id = 14;
 }
 
-message GetRateRequest {
+message GetRatesRequest {}
+
+message GetRatesResponse {
+  // Always true. Present so that a caller logging or forwarding the response
+  // cannot lose the fact that these are not honourable prices.
+  bool indicative = 1;
+  repeated Rate rates = 2;
+}
+
+// Rate is the customer rate for selling one major unit of sell_currency for
+// buy_currency, as of the latest observation.
+message Rate {
   string sell_currency = 1;
   string buy_currency = 2;
-}
-
-message GetRateResponse {
-  string sell_currency = 1;
-  string buy_currency = 2;
-  string mid_rate = 3;  // decimal string
-  string rate_source = 4;
-  google.protobuf.Timestamp as_of = 5;
-}
-
-message ListCurrenciesRequest {}
-
-message ListCurrenciesResponse {
-  repeated money.v1.Currency currencies = 1;
+  // False when there is no observation within the staleness threshold. The
+  // rate fields are then empty: a stale number is not shown at all.
+  bool available = 3;
+  string mid_rate = 4;
+  string rate = 5;
+  int32 spread_bps = 6;
+  string rate_source = 7;
+  google.protobuf.Timestamp observed_at = 8;  // provider's timestamp
+  google.protobuf.Timestamp fetched_at = 9;   // when this service fetched it
 }
