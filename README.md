@@ -38,24 +38,75 @@ it adoptable one service at a time.
 
 ## Adopting it
 
-`swiftbon.com/shared` is not a resolvable import path — there is no registry
-publishing it — so each consumer wires it in with a `replace` directive:
+Releases are git tags on this repository (`v0.1.0`, `v0.2.0`, …), each with a
+GitHub Release listing what changed. `swiftbon.com/shared` is not itself a
+resolvable import path — nothing at `swiftbon.com` points Go at this repo — so a
+consumer keeps that import path and maps it to a tagged release with a `replace`:
 
 ```
 // go.mod
 require swiftbon.com/shared v0.0.0
 
+replace swiftbon.com/shared => github.com/SwiftBon/swiftbon.shared v0.1.0
+```
+
+The `replace` line is the only place the version lives; `require` stays at
+`v0.0.0`. Imports are unchanged — `swiftbon.com/shared/money`,
+`swiftbon.com/shared/proto/gen/go/fx/v1`, and so on. To move to a newer
+release:
+
+```sh
+go mod edit -replace=swiftbon.com/shared=github.com/SwiftBon/swiftbon.shared@v0.2.0
+go mod tidy
+```
+
+### Access
+
+The repository is private, so Go must fetch it directly rather than through
+`proxy.golang.org`, and git needs credentials for it.
+
+Locally, once:
+
+```sh
+go env -w GOPRIVATE=github.com/SwiftBon/*
+gh auth setup-git    # or an SSH insteadOf rule for github.com/SwiftBon/
+```
+
+In a consumer's GitHub Actions workflow, that repo's `GITHUB_TOKEN` cannot read
+this one. Use a fine-grained token with read-only **Contents** access to
+`swiftbon.shared`, stored as a secret (`SHARED_READ_TOKEN` below), before any
+`go` command:
+
+```yaml
+env:
+  GOPRIVATE: github.com/SwiftBon/*
+steps:
+  - run: git config --global url."https://x-access-token:${{ secrets.SHARED_READ_TOKEN }}@github.com/SwiftBon/".insteadOf "https://github.com/SwiftBon/"
+```
+
+A Docker build that runs `go mod download` needs the same token, passed as a
+build secret rather than a build arg so it does not land in an image layer.
+
+### Local development against an unreleased change
+
+To try a change here from a consumer before releasing it, point the `replace`
+at the sibling checkout instead, and put it back before merging:
+
+```
 replace swiftbon.com/shared => ../swiftbon.shared
 ```
 
-This assumes the sibling-directory layout the repos are already checked out in.
-Add exactly these two lines, then `go mod tidy`.
+### Dropping the `replace`
 
-Publishing to a private registry, or collapsing the estate into a monorepo,
-would both be better end states than a `replace` directive pointing at a
-relative path — it means every checkout must have the repositories side by side,
-and CI must clone two repos to build one. That is worth doing, but it is not a
-reason to hold up multi-currency, so start with the `replace`.
+If `https://swiftbon.com/shared?go-get=1` served
+
+```html
+<meta name="go-import" content="swiftbon.com/shared git https://github.com/SwiftBon/swiftbon.shared">
+```
+
+consumers could `go get swiftbon.com/shared@v0.1.0` with
+`GOPRIVATE=swiftbon.com/*` and no `replace` at all. The page must be public;
+the repository can stay private. Nothing else in this module changes.
 
 ### Go version
 
@@ -434,6 +485,26 @@ What is covered:
 - A regression test pinning `1.15 → 115`, so the truncating float path cannot
   come back.
 
+## Releasing
+
+Actions → **cd** → **Run workflow** on `main`, and choose the bump: `patch`
+for fixes, `minor` for anything additive or — while on `v0` — breaking. The
+workflow (`.github/workflows/cd.yml`) works out the next version from the
+latest tag, runs `go mod tidy -diff`, `go mod verify`, `make fmt-check` and
+`make check`, and only if all of them pass creates the tag and the GitHub
+Release.
+
+Do not push `v*` tags by hand. Go resolves the tag, not the Release, so a
+hand-pushed tag is consumable whether or not it passed the gate. A tag ruleset
+restricting `v*` creation to the workflow makes this enforced, not just
+documented.
+
+A tag is permanent once anyone has fetched it — their `go.sum` pins its
+contents. Never move or reuse one; release the fix as the next version.
+
+`v2` and later need the module path to become `swiftbon.com/shared/v2`; the
+workflow refuses a `major` bump past `v1` until it has.
+
 ## Layout
 
 ```
@@ -461,6 +532,7 @@ swiftbon.shared/
     postings/v1/postings.proto
     seahorse/v1/seahorse.proto
     gen/go/...                 generated Go, committed
+  .github/workflows/cd.yml     release: gate, tag, GitHub Release
   Makefile
   README.md
 ```
