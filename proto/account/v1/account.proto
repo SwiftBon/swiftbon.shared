@@ -17,6 +17,9 @@ syntax = "proto3";
 // field number is left as it is for now.
 package account.v1;
 
+import "google/protobuf/timestamp.proto";
+import "rails/v1/rails.proto";
+
 option go_package = "swiftbon.com/shared/proto/gen/go/account/v1;accountv1";
 option java_multiple_files = true;
 option java_package = "com.swiftbon.account.v1";
@@ -30,6 +33,33 @@ service AccountMs {
   rpc CheckCustomer(CheckCustomerRequest) returns (BaseResponse) {}
   rpc CreateSystemAccount(CreateSystemAccountRequest) returns (BaseResponse) {}
   rpc SearchSystemAccountByAccountNumber(SearchSystemByAccountNumberRequest) returns (BaseResponse) {}
+
+  // ---- Added for the web dashboard. Additive: nothing above changed. --------
+  //
+  // Business accounts. These RPCs return typed messages and report failures as
+  // gRPC statuses carrying a google.rpc.ErrorInfo with domain
+  // "account.swiftbon.com":
+  //
+  //   reason                  grpc code            meaning
+  //   VALIDATION              INVALID_ARGUMENT
+  //   NOT_FOUND               NOT_FOUND
+  //   ALREADY_EXISTS          ALREADY_EXISTS       the business or account already exists
+  //   CURRENCY_NOT_ALLOWED    FAILED_PRECONDITION  not in product_currencies for the business product
+  //   INTERNAL                INTERNAL
+  //
+  // Every request carries org_id.
+
+  rpc CreateBusiness(CreateBusinessRequest) returns (Business) {}
+  rpc GetBusiness(GetBusinessRequest) returns (Business) {}
+  rpc OpenBusinessAccount(OpenBusinessAccountRequest) returns (BusinessAccount) {}
+  rpc ListOrgAccounts(ListOrgAccountsRequest) returns (ListOrgAccountsResponse) {}
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse) {}
+  // SetCapability records a capability change. Only provider-capability-changed
+  // events and ops actions call it; nothing infers a capability.
+  rpc SetCapability(SetCapabilityRequest) returns (rails.v1.CapabilityStatus) {}
+  // IssueReceivingDetailsVersion stores a new version of an account's receiving
+  // details, so a later move to a partner bank is a reissue rather than a rewrite.
+  rpc IssueReceivingDetailsVersion(IssueReceivingDetailsVersionRequest) returns (ReceivingDetailsVersion) {}
 }
 
 message BaseResponse {
@@ -108,4 +138,113 @@ message CreateSystemAccountRequest {
   int32 transaction_permission = 6;
   int32 account_status = 7;
   int64 initial_balance = 8;
+}
+
+// ---------------------------------------------------------------------------
+// Business accounts (web dashboard)
+// ---------------------------------------------------------------------------
+
+message CreateBusinessRequest {
+  string org_id = 1;
+  string application_id = 2;
+  string legal_name = 3;
+  string entity_type = 4;                    // ltd | plc | bn | it
+  string registration_number = 5;
+  string tin = 6;
+  rails.v1.Address registered_address = 7;
+  string country = 8;                        // ISO 3166-1 alpha-2
+  string risk_rating = 9;                    // low | medium | high, from the KYB decision
+  string idempotency_key = 10;
+}
+
+message GetBusinessRequest {
+  string org_id = 1;
+}
+
+message Business {
+  string org_id = 1;
+  string business_id = 2;
+  string legal_name = 3;
+  string entity_type = 4;
+  string registration_number = 5;
+  string tin = 6;
+  rails.v1.Address registered_address = 7;
+  string country = 8;
+  string risk_rating = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message OpenBusinessAccountRequest {
+  string org_id = 1;
+  string currency = 2;
+  string provider = 3;                       // paylony | fcy:<vendor>
+  string idempotency_key = 4;
+}
+
+enum BusinessAccountState {
+  BUSINESS_ACCOUNT_STATE_UNSPECIFIED = 0;
+  BUSINESS_ACCOUNT_STATE_PENDING = 1;
+  BUSINESS_ACCOUNT_STATE_ACTIVE = 2;
+  BUSINESS_ACCOUNT_STATE_RESTRICTED_OUTBOUND = 3;
+}
+
+// BusinessAccount is one currency's account. Balances are postings' to report;
+// this holds identity, custody and the current receiving details.
+message BusinessAccount {
+  string org_id = 1;
+  string account_number = 2;
+  string currency = 3;
+  BusinessAccountState state = 4;
+  string provider = 5;
+  string custody_kind = 6;                   // partner_bank | fcy_provider | ngn_provider
+  string custody_note = 7;
+  ReceivingDetailsVersion receiving_details = 8;
+  google.protobuf.Timestamp opened_at = 9;
+}
+
+message ListOrgAccountsRequest {
+  string org_id = 1;
+}
+
+message ListOrgAccountsResponse {
+  repeated BusinessAccount accounts = 1;
+}
+
+message GetCapabilitiesRequest {
+  string org_id = 1;
+}
+
+message GetCapabilitiesResponse {
+  repeated rails.v1.CapabilityStatus capabilities = 1;
+}
+
+message SetCapabilityRequest {
+  string org_id = 1;
+  rails.v1.Capability capability = 2;
+  string currency = 3;
+  rails.v1.CapabilityState state = 4;
+  string rfi_id = 5;
+  string source = 6;                         // provider | ops
+  string actor_ref = 7;
+  string reason = 8;
+}
+
+message IssueReceivingDetailsVersionRequest {
+  string org_id = 1;
+  string account_number = 2;
+  rails.v1.ReceivingDetails details = 3;
+  string reason = 4;                         // "initial" | "provider migration" | ...
+  // grace_days keeps the superseded version usable for inbound payments. Zero
+  // means the platform default (account.receiving_details_grace_days).
+  int32 grace_days = 5;
+  string idempotency_key = 6;
+}
+
+message ReceivingDetailsVersion {
+  string account_number = 1;
+  int32 version = 2;
+  rails.v1.ReceivingDetails details = 3;
+  string reason = 4;
+  google.protobuf.Timestamp issued_at = 5;
+  google.protobuf.Timestamp grace_until = 6; // when the previous version stops being accepted
 }

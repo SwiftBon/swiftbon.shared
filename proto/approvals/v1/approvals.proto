@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+// Package approvals.v1 is how domain services ask swiftbon.approvals.service to
+// decide something. Approvals is generic: payouts, identity, compliance and the
+// gateway ask, approvals decides, and the asking service learns the outcome from
+// the approval-decided and approval-expired events.
+//
+// Approval state lives only here. A service that asked knows its subject is
+// "pending approval"; it never counts approvals itself.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "approvals.swiftbon.com":
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   NOT_FOUND               NOT_FOUND
+//   ALREADY_DECIDED         FAILED_PRECONDITION  the request is no longer pending
+//   NOT_INITIATOR           PERMISSION_DENIED    only the initiator may cancel
+//   POLICY_UNAVAILABLE      UNAVAILABLE          no policy could be evaluated
+//   INTERNAL                INTERNAL
+package approvals.v1;
+
+import "google/protobuf/timestamp.proto";
+import "money/v1/money.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/approvals/v1;approvalsv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.approvals.v1";
+option java_outer_classname = "ApprovalsProto";
+
+service Approvals {
+  // CreateRequest opens an approval. Replaying an idempotency_key returns the
+  // request it created.
+  rpc CreateRequest(CreateRequestRequest) returns (ApprovalRequest);
+  rpc GetRequest(GetRequestRequest) returns (ApprovalRequest);
+
+  // CancelRequest withdraws a pending request. Only the initiator may cancel,
+  // and only before it is decided.
+  rpc CancelRequest(CancelRequestRequest) returns (ApprovalRequest);
+
+  // EvaluatePolicy says what an action of this kind and size would need,
+  // without opening anything. Payouts uses it for the preview.
+  rpc EvaluatePolicy(EvaluatePolicyRequest) returns (PolicyEvaluation);
+}
+
+enum ApprovalStatus {
+  APPROVAL_STATUS_UNSPECIFIED = 0;
+  APPROVAL_STATUS_PENDING = 1;
+  APPROVAL_STATUS_APPROVED = 2;
+  APPROVAL_STATUS_REJECTED = 3;
+  APPROVAL_STATUS_EXPIRED = 4;
+  APPROVAL_STATUS_CANCELLED = 5;
+}
+
+message CreateRequestRequest {
+  string org_id = 1;
+  // kind is payout | beneficiary | member_invite | member_role_change |
+  // policy_change | api_key | mfa_reset | setting_change.
+  string kind = 2;
+  string subject_ref = 3;                    // PO-20896, BEN-3391, ...
+  string subject_service = 4;                // the service that owns the subject
+  // payload_hash binds the approval to exactly what was asked: a decision on a
+  // payout for ₦100 cannot be applied to one for ₦100,000.
+  string payload_hash = 5;
+  string summary = 6;
+  optional money.v1.Money amount = 7;
+  string initiator_id = 8;
+  string context_notes = 9;
+  string idempotency_key = 10;
+}
+
+message GetRequestRequest {
+  string org_id = 1;
+  string approval_id = 2;                    // either approval_id or reference
+  string reference = 3;                      // APR-####
+}
+
+message CancelRequestRequest {
+  string org_id = 1;
+  string approval_id = 2;
+  string actor_id = 3;
+  string reason = 4;
+}
+
+message EvaluatePolicyRequest {
+  string org_id = 1;
+  string kind = 2;
+  optional money.v1.Money amount = 3;
+}
+
+message PolicyEvaluation {
+  int32 approvers_required = 1;
+  string reason = 2;                         // human text: "Above ₦5,000,000: two approvers"
+  int64 policy_version = 3;
+  // amount_equivalent is the amount at mid in the policy's threshold currency,
+  // when a conversion was needed. It is indicative; it only picks a tier.
+  optional money.v1.Money amount_equivalent = 4;
+  bool stale_rate_used = 5;                  // the higher tier was chosen because no fresh rate existed
+  google.protobuf.Timestamp evaluated_at = 6;
+}
+
+message Decision {
+  string user_id = 1;
+  string decision = 2;                       // approved | rejected
+  string reason = 3;
+  google.protobuf.Timestamp decided_at = 4;
+}
+
+message ApprovalRequest {
+  string id = 1;
+  string reference = 2;                      // APR-####
+  string org_id = 3;
+  string kind = 4;
+  string subject_ref = 5;
+  string subject_service = 6;
+  string payload_hash = 7;
+  string summary = 8;
+  optional money.v1.Money amount = 9;
+  string initiator_id = 10;
+  string context_notes = 11;
+  ApprovalStatus status = 12;
+  int32 approvers_required = 13;
+  int32 approvals_received = 14;
+  int64 policy_version = 15;
+  repeated Decision decisions = 16;
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Timestamp expires_at = 18;
+  google.protobuf.Timestamp decided_at = 19;
+}

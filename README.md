@@ -18,23 +18,40 @@ particular drift impossible.
 
 ## What is in scope
 
-This module owns exactly four things:
+This module owns exactly these things:
 
 1. **The money and currency model** — `money/`
 2. **The cross-service contracts** — `proto/`
 3. **The FX rate and quote types** shared by `fx.service` and `postings.service` — `fx/`
 4. **The account-shape vocabulary** shared by `account.service` and
    `postings.service` — `account/`
+5. **The internal principal token** — `principal/`
+6. **Event payload types** for every topic the web dashboard adds — `events/`
+7. **Human reference formats** (`PO-20896`, `CASE-4182`) — `refs/`
+8. **The name normaliser and matcher** — `names/`
+9. **Runtime-configurable settings** — `settings/`
 
 `account/` was added when `swiftbon.account.service` adopted this module. It is
 here for the same reason `money/` is: the two services had already assigned two
 different names to one persisted integer.
 
+`principal/`, `events/`, `refs/`, `names/` and `settings/` were added for the web
+dashboard, which introduces user identity into service calls and ten new
+services that must agree on a handful of things. The reason is the same as for
+`money/`, with a sharper edge for the first: **a principal verifier that differs
+between services is an authorisation bypass.** One service that accepts
+`alg=none`, or skips the audience check, undoes the gateway's work for every
+request that can reach it. The others are smaller versions of the same problem:
+a payload described in two services' own words drifts, two matchers disagree
+about whether a name matches, ten services build ten slightly different settings
+tables.
+
 It deliberately does **not** contain `pkg/httpserver`, `pkg/grpcserver`,
-`pkg/postgres`, `pkg/logger`, the auth middleware or `BaseResponse`. Those are
-worth consolidating too, but they have a large blast radius and none of them are
-on the critical path for multi-currency. Keeping this module small is what makes
-it adoptable one service at a time.
+`pkg/postgres`, `pkg/logger`, the gateway's signing-key management or
+`BaseResponse`. Those are worth consolidating too, but they have a large blast
+radius. (`principal` and `settings` answer in the estate's `BaseResponse` JSON
+shape without importing one.) Keeping this module small is what makes it
+adoptable one service at a time.
 
 ## Adopting it
 
@@ -340,8 +357,59 @@ proto/fx/v1/fx.proto              Quote, GetQuote, ConsumeQuote, GetRates
 proto/account/v1/account.proto    moved from account.service
 proto/postings/v1/postings.proto  moved from postings.service
 proto/seahorse/v1/seahorse.proto  moved from seahorse
+proto/rails/v1/rails.proto        the rail adapter contract (paylony, juice, fcy)
+proto/identity/v1/identity.proto  sessions, API keys, step-up, recipients
+proto/approvals/v1/approvals.proto  maker-checker requests and policy evaluation
+proto/kyc/v1/kyc.proto            registry, related parties, liveness, screening
+proto/documents/v1/documents.proto  document state and generated statements
+proto/compliance/v1/compliance.proto  counterparty screening, audit fallback
+proto/treasury/v1/treasury.proto  rail health per provider
 proto/gen/go/...                  generated Go, committed
 ```
+
+`postings.v1`, `account.v1` and `fx.v1` gained RPCs for the dashboard (holds,
+statements, business accounts, capabilities, receiving-details versions, mid-rate
+equivalence). The changes are additive: fields and RPCs were added, none removed
+or renumbered, and `proto/wirecompat_test.go` proves the `v0.0.1` bytes still
+decode and re-encode identically.
+
+### `rails.v1`
+
+`RailAdapter` is the one service every rail adapter implements. Payouts,
+onboarding, account and treasury call it without knowing the vendor. Three rules
+carry most of the weight:
+
+- **`SubmitPayout` has no ledger effect.** Payouts debits the customer through
+  postings only after the adapter reports acceptance.
+- **An attempt reaches a provider at most once.** `idempotency_key` is the
+  attempt key (`PO-20896-1`). The router may fail over to the next provider only
+  when the answer carries `safe_to_reroute`, which is true only for a definitive
+  refusal. `PAYOUT_STATE_UNKNOWN` is never rerouted on a timeout alone.
+- **Bank identity is canonical.** `Beneficiary.bank` is the NIP institution
+  code; each adapter maps it to its provider's own list.
+
+An adapter that does not support an RPC returns gRPC `UNIMPLEMENTED`, and
+`Capabilities` says so up front.
+
+### Service-to-service contracts
+
+| Proto | Implemented by | Called by |
+| --- | --- | --- |
+| `identity.v1` | identity | gateway, communication, approvals, payouts, onboarding |
+| `approvals.v1` | approvals | payouts, identity, compliance, gateway |
+| `postings.v1` (extended) | postings | payouts, compliance, rails, treasury, documents |
+| `account.v1` (extended) | account | onboarding, payouts, rails, gateway |
+| `fx.v1` (extended) | fx | approvals, gateway |
+| `kyc.v1` | kyc | onboarding, compliance |
+| `documents.v1` | documents | onboarding, support, gateway |
+| `compliance.v1` | compliance | payouts |
+| `treasury.v1` | treasury | payouts, gateway |
+| `rails.v1` | fcy, paylony, juice | onboarding, payouts, account, treasury |
+
+Later work may **add** fields and RPCs through a small follow-up change to this
+repository. It must never change or remove one; `proto/contracts_test.go` lists
+them. Every request carries `org_id` where the data is tenant-scoped, and every
+call made on a user's behalf carries the principal metadata.
 
 ### `fx.v1`
 
@@ -455,6 +523,113 @@ the obvious next change, but it belongs with the account service's own
 multi-currency work rather than with the creation of this module, so the field
 is carried over unchanged for now.
 
+## `principal`
+
+The internal token the gateway mints for every call it makes for a user, and the
+verifier every other service uses to read it.
+
+```go
+v, _ := principal.NewVerifier("payouts", principal.KeySet{"k1": gatewayPublicKey})
+
+e.POST("/payouts/v1/api/payouts", h.Create, principal.Require(v,
+    principal.WithPerm(principal.PayoutsInitiate),
+    principal.WithAuthLevel(principal.MFADevice),
+    principal.DenyReadOnly()))
+
+grpc.NewServer(grpc.UnaryInterceptor(principal.UnaryServerInterceptor(v)))
+
+p, ok := principal.From(ctx) // OrgID comes from here and nowhere else
+```
+
+- **Header** `X-Swiftbon-Principal` (gRPC metadata `x-swiftbon-principal`). A JWT
+  signed with Ed25519, `alg=EdDSA`. Every other `alg`, including `none`, is
+  rejected before any key is looked up.
+- **Checks:** `iss=swiftbon.gateway`; `aud` includes the verifier's service name;
+  `exp` (lifetime at most 60 s, enforced on verify, with ±5 s skew); a known
+  `kid`. The key set is replaceable at runtime (`SetKeys`), so the gateway's key
+  rotates without a coordinated deploy.
+- **Failures:** missing or invalid is `401 UNAUTHENTICATED` (gRPC
+  `Unauthenticated`); valid but insufficient is `403 FORBIDDEN` (gRPC
+  `PermissionDenied`), with the reason in `responseDescription`:
+  `permission_required`, `mfa_device_required`, `read_only_principal`,
+  `wrong_realm`.
+- `AuthLevel` is ordered `FirstFactor < MFA < MFADevice`. An impersonating
+  principal must be read-only: the signer refuses to mint one that is not, and
+  the verifier refuses to accept one.
+- The gRPC interceptor reads metadata with the length-guarded `md.Get` form. A
+  call with no metadata at all gets `Unauthenticated`, not a panic.
+
+Only the gateway holds a `Signer`. Its key management is out of scope here.
+
+## `events`
+
+One struct per topic, with `Topic…` and `SchemaVersion…` constants and the
+`TopicName()` and `PayloadVersion()` methods that make it an `events.Payload`.
+JSON is snake_case, every amount is `money.Money`, and every payload carries
+`org_id` (`uuid.Nil` for the few platform-level events).
+
+`events.Envelope` uses seahorse's own JSON field names (`topic`,
+`schema_version`, `publisher`, `published_at`, `message`) plus `event_id`, the
+publisher's outbox row id, which consumers deduplicate on.
+`Envelope.PublishRequest()` produces the body seahorse's publish endpoint takes.
+
+A golden JSON file per topic in `events/testdata` fails the build when a field is
+renamed. After an intended, additive change run `go test ./events -update`.
+Renaming, removing or re-typing a field needs a new schema version.
+
+`screening-completed` and `screening-hit-detected` already exist with a
+person-shaped version-1 payload. The versions here are 2: the version-1 fields
+are unchanged and the subject and organisation are added.
+
+## `refs`
+
+`refs.Format(refs.Payout, 20896)` is `PO-20896`; `refs.Parse` is its strict
+inverse and rejects lower case, unknown prefixes, short numbers, and leading
+zeros beyond the width. Numbers come from each owner's Postgres sequence; this
+package never allocates one.
+
+## `names`
+
+`names.Normalise` and `names.Match(a, b, kind, threshold)` are the one name
+comparison kyc, payouts and documents share. The threshold is passed in from the
+caller's own settings (`kyc.related_party_name_match_threshold`,
+`payouts.name_match_threshold`), never hard-coded here. A threshold outside
+(0, 1] never matches.
+
+## `settings`
+
+Runtime-configurable values: registered in code with a type, default, bounds and
+owner; stored as versioned, immutable rows; changed only through an approval;
+effective within 60 seconds without a deploy.
+
+```go
+reg := settings.NewRegistry("payouts")
+NameMatch := settings.MustRegister(reg, settings.Key[float64]{
+    Name: "payouts.name_match_threshold", Default: 0.85, Scope: settings.Global,
+    Description: "Minimum name-enquiry score to treat a beneficiary as matched",
+    Owner: "compliance", Bounds: "0.5 to 1",
+    Validate: func(v float64) error { /* ... */ },
+})
+mgr := settings.NewManager(reg, pgstore.New(db))
+mgr.Seed(ctx) // at boot: insert missing globals, never overwrite
+v, version, err := settings.Get(ctx, mgr, NameMatch, &orgID)
+
+settings.Mount(ops.Group("/settings", principal.Require(ver, principal.WithRealm(principal.Staff))), mgr)
+```
+
+- Supported types: `int64`, `float64` (thresholds, never money), `bool`, `string`,
+  `[]string`, `money.Money`, `time.Duration` (as `"15m"`), and JSON structs.
+- `Get` resolves an organisation override, then the global value, then the
+  registered default, and returns the version used so a request can record it.
+- `Propose` validates before an approval is opened; `Apply` re-validates, requires
+  an approval id, writes the next version and returns the `setting-changed` event
+  to publish. Neither can touch an unregistered key.
+- `Apply(..., settings.UsingStore(txStore))` writes through the caller's
+  transaction so the new version and the outbox row commit together.
+- The table comes from `settings.MigrationUp`. The Postgres store is in
+  `settings/pgstore`; its tests need a database and run only when
+  `SETTINGS_TEST_DSN` is set.
+
 ## Testing
 
 The estate currently has no unit tests at all. This module sets the standard,
@@ -466,8 +641,11 @@ make test     # just the tests, with -race
 make audit    # go mod verify, dependency surface, govulncheck
 ```
 
-Current state: **100% statement coverage** on `money/` and `fx/`, with `-race`.
-The Makefile enforces a 90% floor and fails the build below it.
+Current state: **100% statement coverage** on `money/` and `fx/`, and 97 to 100%
+on the other packages, with `-race`. The Makefile enforces a 90% floor over all
+of them together and fails the build below it. The Postgres store in
+`settings/pgstore` is outside that figure; run its tests with
+`SETTINGS_TEST_DSN=postgres://… go test ./settings/pgstore`.
 
 What is covered:
 
@@ -525,12 +703,22 @@ swiftbon.shared/
   account/
     account_type.go            AccountType, the Checking/Current resolution
     account_type_test.go
+  principal/                   gateway-signed principal token, Echo middleware, gRPC interceptor
+  events/                      payload type, topic and version per dashboard topic; testdata/ goldens
+  refs/                        PO-/BEN-/CASE- reference formatting and parsing
+  names/                       name normaliser and matcher
+  settings/                    typed registry, versioned store, cached reads, ops handlers
+    pgstore/                   Postgres store (tests need SETTINGS_TEST_DSN)
   proto/
     money/v1/money.proto
     fx/v1/fx.proto
     account/v1/account.proto
     postings/v1/postings.proto
     seahorse/v1/seahorse.proto
+    rails/v1, identity/v1, approvals/v1, kyc/v1, documents/v1,
+    compliance/v1, treasury/v1   new for the web dashboard
+    wirecompat_test.go         v0.0.1 bytes still decode and re-encode identically
+    contracts_test.go          the service-to-service RPCs that must not disappear
     gen/go/...                 generated Go, committed
   .github/workflows/cd.yml     release: gate, tag, GitHub Release
   Makefile

@@ -798,6 +798,140 @@ func (x *Rate) GetFetchedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// EquivalentRequest asks what amount is worth in target_currency at mid.
+type EquivalentRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Amount         *v1.Money              `protobuf:"bytes,1,opt,name=amount,proto3" json:"amount,omitempty"`
+	TargetCurrency string                 `protobuf:"bytes,2,opt,name=target_currency,json=targetCurrency,proto3" json:"target_currency,omitempty"` // ISO 4217 alpha-3
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EquivalentRequest) Reset() {
+	*x = EquivalentRequest{}
+	mi := &file_fx_v1_fx_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EquivalentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EquivalentRequest) ProtoMessage() {}
+
+func (x *EquivalentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fx_v1_fx_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EquivalentRequest.ProtoReflect.Descriptor instead.
+func (*EquivalentRequest) Descriptor() ([]byte, []int) {
+	return file_fx_v1_fx_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *EquivalentRequest) GetAmount() *v1.Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
+func (x *EquivalentRequest) GetTargetCurrency() string {
+	if x != nil {
+		return x.TargetCurrency
+	}
+	return ""
+}
+
+type EquivalentResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// equivalent is amount converted at the mid rate with the same half-up
+	// rounding as money.Convert.
+	Equivalent *v1.Money `protobuf:"bytes,1,opt,name=equivalent,proto3" json:"equivalent,omitempty"`
+	// mid_rate is the 10-place decimal string used, as source -> target.
+	MidRate string `protobuf:"bytes,2,opt,name=mid_rate,json=midRate,proto3" json:"mid_rate,omitempty"`
+	// indicative is always true. It is a field, not an implication, so a client
+	// that stores or displays the value carries the label with it.
+	Indicative    bool                   `protobuf:"varint,3,opt,name=indicative,proto3" json:"indicative,omitempty"`
+	Basis         string                 `protobuf:"bytes,4,opt,name=basis,proto3" json:"basis,omitempty"`           // always "mid"
+	AsOf          *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=as_of,json=asOf,proto3" json:"as_of,omitempty"` // when the rate was published
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EquivalentResponse) Reset() {
+	*x = EquivalentResponse{}
+	mi := &file_fx_v1_fx_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EquivalentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EquivalentResponse) ProtoMessage() {}
+
+func (x *EquivalentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fx_v1_fx_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EquivalentResponse.ProtoReflect.Descriptor instead.
+func (*EquivalentResponse) Descriptor() ([]byte, []int) {
+	return file_fx_v1_fx_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *EquivalentResponse) GetEquivalent() *v1.Money {
+	if x != nil {
+		return x.Equivalent
+	}
+	return nil
+}
+
+func (x *EquivalentResponse) GetMidRate() string {
+	if x != nil {
+		return x.MidRate
+	}
+	return ""
+}
+
+func (x *EquivalentResponse) GetIndicative() bool {
+	if x != nil {
+		return x.Indicative
+	}
+	return false
+}
+
+func (x *EquivalentResponse) GetBasis() string {
+	if x != nil {
+		return x.Basis
+	}
+	return ""
+}
+
+func (x *EquivalentResponse) GetAsOf() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AsOf
+	}
+	return nil
+}
+
 var File_fx_v1_fx_proto protoreflect.FileDescriptor
 
 const file_fx_v1_fx_proto_rawDesc = "" +
@@ -863,17 +997,32 @@ const file_fx_v1_fx_proto_rawDesc = "" +
 	"\vobserved_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAt\x129\n" +
 	"\n" +
-	"fetched_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tfetchedAt*w\n" +
+	"fetched_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tfetchedAt\"e\n" +
+	"\x11EquivalentRequest\x12'\n" +
+	"\x06amount\x18\x01 \x01(\v2\x0f.money.v1.MoneyR\x06amount\x12'\n" +
+	"\x0ftarget_currency\x18\x02 \x01(\tR\x0etargetCurrency\"\xc7\x01\n" +
+	"\x12EquivalentResponse\x12/\n" +
+	"\n" +
+	"equivalent\x18\x01 \x01(\v2\x0f.money.v1.MoneyR\n" +
+	"equivalent\x12\x19\n" +
+	"\bmid_rate\x18\x02 \x01(\tR\amidRate\x12\x1e\n" +
+	"\n" +
+	"indicative\x18\x03 \x01(\bR\n" +
+	"indicative\x12\x14\n" +
+	"\x05basis\x18\x04 \x01(\tR\x05basis\x12/\n" +
+	"\x05as_of\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04asOf*w\n" +
 	"\vQuoteStatus\x12\x1c\n" +
 	"\x18QUOTE_STATUS_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11QUOTE_STATUS_OPEN\x10\x01\x12\x19\n" +
 	"\x15QUOTE_STATUS_CONSUMED\x10\x02\x12\x18\n" +
-	"\x14QUOTE_STATUS_EXPIRED\x10\x032\x8a\x02\n" +
+	"\x14QUOTE_STATUS_EXPIRED\x10\x032\xcf\x02\n" +
 	"\tFxService\x124\n" +
 	"\x05Quote\x12\x13.fx.v1.QuoteRequest\x1a\x14.fx.v1.QuoteResponse\"\x00\x12=\n" +
 	"\bGetQuote\x12\x16.fx.v1.GetQuoteRequest\x1a\x17.fx.v1.GetQuoteResponse\"\x00\x12I\n" +
 	"\fConsumeQuote\x12\x1a.fx.v1.ConsumeQuoteRequest\x1a\x1b.fx.v1.ConsumeQuoteResponse\"\x00\x12=\n" +
-	"\bGetRates\x12\x16.fx.v1.GetRatesRequest\x1a\x17.fx.v1.GetRatesResponse\"\x00BL\n" +
+	"\bGetRates\x12\x16.fx.v1.GetRatesRequest\x1a\x17.fx.v1.GetRatesResponse\"\x00\x12C\n" +
+	"\n" +
+	"Equivalent\x12\x18.fx.v1.EquivalentRequest\x1a\x19.fx.v1.EquivalentResponse\"\x00BL\n" +
 	"\x12com.swiftbon.fx.v1B\aFxProtoP\x01Z+swiftbon.com/shared/proto/gen/go/fx/v1;fxv1b\x06proto3"
 
 var (
@@ -889,7 +1038,7 @@ func file_fx_v1_fx_proto_rawDescGZIP() []byte {
 }
 
 var file_fx_v1_fx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fx_v1_fx_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_fx_v1_fx_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_fx_v1_fx_proto_goTypes = []any{
 	(QuoteStatus)(0),              // 0: fx.v1.QuoteStatus
 	(*QuoteRequest)(nil),          // 1: fx.v1.QuoteRequest
@@ -902,37 +1051,44 @@ var file_fx_v1_fx_proto_goTypes = []any{
 	(*GetRatesRequest)(nil),       // 8: fx.v1.GetRatesRequest
 	(*GetRatesResponse)(nil),      // 9: fx.v1.GetRatesResponse
 	(*Rate)(nil),                  // 10: fx.v1.Rate
-	(*v1.Money)(nil),              // 11: money.v1.Money
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(*EquivalentRequest)(nil),     // 11: fx.v1.EquivalentRequest
+	(*EquivalentResponse)(nil),    // 12: fx.v1.EquivalentResponse
+	(*v1.Money)(nil),              // 13: money.v1.Money
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
 }
 var file_fx_v1_fx_proto_depIdxs = []int32{
-	11, // 0: fx.v1.QuoteRequest.sell:type_name -> money.v1.Money
-	11, // 1: fx.v1.QuoteRequest.buy:type_name -> money.v1.Money
+	13, // 0: fx.v1.QuoteRequest.sell:type_name -> money.v1.Money
+	13, // 1: fx.v1.QuoteRequest.buy:type_name -> money.v1.Money
 	7,  // 2: fx.v1.QuoteResponse.quote:type_name -> fx.v1.Quote
 	7,  // 3: fx.v1.GetQuoteResponse.quote:type_name -> fx.v1.Quote
 	7,  // 4: fx.v1.ConsumeQuoteResponse.quote:type_name -> fx.v1.Quote
-	11, // 5: fx.v1.Quote.sell:type_name -> money.v1.Money
-	11, // 6: fx.v1.Quote.buy:type_name -> money.v1.Money
-	12, // 7: fx.v1.Quote.created_at:type_name -> google.protobuf.Timestamp
-	12, // 8: fx.v1.Quote.expires_at:type_name -> google.protobuf.Timestamp
+	13, // 5: fx.v1.Quote.sell:type_name -> money.v1.Money
+	13, // 6: fx.v1.Quote.buy:type_name -> money.v1.Money
+	14, // 7: fx.v1.Quote.created_at:type_name -> google.protobuf.Timestamp
+	14, // 8: fx.v1.Quote.expires_at:type_name -> google.protobuf.Timestamp
 	0,  // 9: fx.v1.Quote.status:type_name -> fx.v1.QuoteStatus
-	12, // 10: fx.v1.Quote.consumed_at:type_name -> google.protobuf.Timestamp
+	14, // 10: fx.v1.Quote.consumed_at:type_name -> google.protobuf.Timestamp
 	10, // 11: fx.v1.GetRatesResponse.rates:type_name -> fx.v1.Rate
-	12, // 12: fx.v1.Rate.observed_at:type_name -> google.protobuf.Timestamp
-	12, // 13: fx.v1.Rate.fetched_at:type_name -> google.protobuf.Timestamp
-	1,  // 14: fx.v1.FxService.Quote:input_type -> fx.v1.QuoteRequest
-	3,  // 15: fx.v1.FxService.GetQuote:input_type -> fx.v1.GetQuoteRequest
-	5,  // 16: fx.v1.FxService.ConsumeQuote:input_type -> fx.v1.ConsumeQuoteRequest
-	8,  // 17: fx.v1.FxService.GetRates:input_type -> fx.v1.GetRatesRequest
-	2,  // 18: fx.v1.FxService.Quote:output_type -> fx.v1.QuoteResponse
-	4,  // 19: fx.v1.FxService.GetQuote:output_type -> fx.v1.GetQuoteResponse
-	6,  // 20: fx.v1.FxService.ConsumeQuote:output_type -> fx.v1.ConsumeQuoteResponse
-	9,  // 21: fx.v1.FxService.GetRates:output_type -> fx.v1.GetRatesResponse
-	18, // [18:22] is the sub-list for method output_type
-	14, // [14:18] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	14, // 12: fx.v1.Rate.observed_at:type_name -> google.protobuf.Timestamp
+	14, // 13: fx.v1.Rate.fetched_at:type_name -> google.protobuf.Timestamp
+	13, // 14: fx.v1.EquivalentRequest.amount:type_name -> money.v1.Money
+	13, // 15: fx.v1.EquivalentResponse.equivalent:type_name -> money.v1.Money
+	14, // 16: fx.v1.EquivalentResponse.as_of:type_name -> google.protobuf.Timestamp
+	1,  // 17: fx.v1.FxService.Quote:input_type -> fx.v1.QuoteRequest
+	3,  // 18: fx.v1.FxService.GetQuote:input_type -> fx.v1.GetQuoteRequest
+	5,  // 19: fx.v1.FxService.ConsumeQuote:input_type -> fx.v1.ConsumeQuoteRequest
+	8,  // 20: fx.v1.FxService.GetRates:input_type -> fx.v1.GetRatesRequest
+	11, // 21: fx.v1.FxService.Equivalent:input_type -> fx.v1.EquivalentRequest
+	2,  // 22: fx.v1.FxService.Quote:output_type -> fx.v1.QuoteResponse
+	4,  // 23: fx.v1.FxService.GetQuote:output_type -> fx.v1.GetQuoteResponse
+	6,  // 24: fx.v1.FxService.ConsumeQuote:output_type -> fx.v1.ConsumeQuoteResponse
+	9,  // 25: fx.v1.FxService.GetRates:output_type -> fx.v1.GetRatesResponse
+	12, // 26: fx.v1.FxService.Equivalent:output_type -> fx.v1.EquivalentResponse
+	22, // [22:27] is the sub-list for method output_type
+	17, // [17:22] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_fx_v1_fx_proto_init() }
@@ -950,7 +1106,7 @@ func file_fx_v1_fx_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fx_v1_fx_proto_rawDesc), len(file_fx_v1_fx_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

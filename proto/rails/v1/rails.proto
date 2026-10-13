@@ -1,0 +1,438 @@
+syntax = "proto3";
+
+// Package rails.v1 is the contract every rail adapter implements:
+// swiftbon.paylony.service (NGN, primary), swiftbon.juice.service (NGN payout
+// fallback), swiftbon.fcy.service (USD, GBP, EUR) and, later, a partner bank.
+// Payouts, onboarding, account and treasury call it without knowing the vendor.
+//
+// What an adapter is, and is not:
+//
+//   - It talks to one provider. It owns that provider's credentials, code lists
+//     and quirks, and maps them onto the types here.
+//   - It has NO ledger effect on payouts. SubmitPayout asks the provider to move
+//     money; debiting the customer is postings' job, done by payouts after the
+//     adapter reports acceptance. An adapter never calls PostTransaction for a
+//     payout.
+//   - For inbound money it does call postings (credit and screening hold in one
+//     transaction) and publishes inbound-payment-received.
+//
+// An adapter that does not support an RPC returns gRPC UNIMPLEMENTED (Juice has
+// no sub-accounts and no inflows), and Capabilities says so up front so a caller
+// does not have to find out by failing.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "rails.swiftbon.com". Branch on the reason, never on the message:
+//
+//   reason                 grpc code            meaning
+//   VALIDATION             INVALID_ARGUMENT     the request is malformed
+//   UNSUPPORTED            UNIMPLEMENTED        this adapter does not do that
+//   NOT_FOUND              NOT_FOUND            no such sub-account, RFI or payout
+//   PROVIDER_UNAVAILABLE   UNAVAILABLE          provider down; outcome unknown for writes
+//   PROVIDER_REFUSED       FAILED_PRECONDITION  provider refused; see SubmitPayoutResponse
+//   IDEMPOTENCY_CONFLICT   ALREADY_EXISTS       key reused with a different request
+//   INTERNAL               INTERNAL
+//
+// Every request carries org_id where the data is tenant-scoped.
+package rails.v1;
+
+import "google/protobuf/timestamp.proto";
+import "money/v1/money.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/rails/v1;railsv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.rails.v1";
+option java_outer_classname = "RailsProto";
+
+service RailAdapter {
+  rpc Capabilities(CapabilitiesRequest) returns (CapabilitiesResponse);        // currencies, rails, features
+  rpc OpenSubAccount(OpenSubAccountRequest) returns (SubAccount);              // business KYB package in
+  rpc GetSubAccount(GetSubAccountRequest) returns (SubAccount);                // status, RFIs, capabilities
+  rpc RespondToRfi(RespondToRfiRequest) returns (Rfi);
+  rpc IssueReceivingDetails(IssueReceivingDetailsRequest) returns (ReceivingDetails);
+  rpc ListBanks(ListBanksRequest) returns (ListBanksResponse);
+  rpc NameEnquiry(NameEnquiryRequest) returns (NameEnquiryResponse);           // UNSUPPORTED is a valid answer
+  rpc SubmitPayout(SubmitPayoutRequest) returns (SubmitPayoutResponse);        // NO ledger effect
+  rpc GetPayoutStatus(GetPayoutStatusRequest) returns (PayoutStatus);
+  rpc ListPendingInbound(ListPendingInboundRequest) returns (ListPendingInboundResponse);
+  rpc GetProviderBalance(GetProviderBalanceRequest) returns (ProviderBalance); // safeguarding, recon
+  rpc ListProviderTransactions(ListProviderTransactionsRequest) returns (ListProviderTransactionsResponse); // recon, cursor-paged
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+enum Feature {
+  FEATURE_UNSPECIFIED = 0;
+  FEATURE_SUB_ACCOUNTS = 1;
+  FEATURE_RECEIVING_DETAILS = 2;
+  FEATURE_NAME_ENQUIRY = 3;
+  FEATURE_PAYOUTS = 4;
+  FEATURE_PENDING_INBOUND = 5;
+  FEATURE_PROVIDER_BALANCE = 6;
+  FEATURE_TRANSACTION_LISTING = 7;
+  FEATURE_RFI = 8;
+}
+
+// Rail names are free-form strings the adapter documents (NIP, ACH, FEDWIRE,
+// FPS, SEPA); they are not an enum so a new rail needs no change here.
+message CapabilitiesRequest {}
+
+message CapabilitiesResponse {
+  string provider = 1;                       // paylony | juice | fcy:<vendor>
+  repeated RailSupport supported = 2;
+}
+
+message RailSupport {
+  string currency = 1;                       // ISO 4217 alpha-3
+  string rail = 2;                           // NIP, ACH, FPS, SEPA, ...
+  repeated Feature features = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-accounts, capabilities and RFIs
+// ---------------------------------------------------------------------------
+
+// Capability is what a business may do in a currency. It changes only through
+// provider-capability-changed events or ops actions; nothing infers it.
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_COLLECTIONS = 1;
+  CAPABILITY_FX_CONVERSION = 2;
+  CAPABILITY_PAYOUTS = 3;
+}
+
+enum CapabilityState {
+  CAPABILITY_STATE_UNSPECIFIED = 0;
+  CAPABILITY_STATE_ENABLED = 1;
+  CAPABILITY_STATE_BLOCKED_RFI = 2;
+  CAPABILITY_STATE_NOT_ENABLED = 3;
+  CAPABILITY_STATE_PENDING = 4;
+}
+
+message CapabilityStatus {
+  Capability capability = 1;
+  string currency = 2;
+  CapabilityState state = 3;
+  string rfi_id = 4;                         // set when state is BLOCKED_RFI
+}
+
+enum SubAccountStatus {
+  SUB_ACCOUNT_STATUS_UNSPECIFIED = 0;
+  SUB_ACCOUNT_STATUS_PENDING = 1;            // provider KYB under way
+  SUB_ACCOUNT_STATUS_ACTIVE = 2;
+  SUB_ACCOUNT_STATUS_RESTRICTED = 3;
+  SUB_ACCOUNT_STATUS_REJECTED = 4;
+  SUB_ACCOUNT_STATUS_CLOSED = 5;
+}
+
+message Address {
+  string line1 = 1;
+  string line2 = 2;
+  string city = 3;
+  string state = 4;
+  string postal_code = 5;
+  string country = 6;                        // ISO 3166-1 alpha-2
+}
+
+message DocumentRef {
+  string document_id = 1;                    // documents service id
+  string requirement_id = 2;
+  string filename = 3;
+  string content_type = 4;
+  string download_url = 5;                   // short-lived, set by the caller
+}
+
+// KybParty is a director, owner or other related party in the KYB package.
+// Identity numbers are not part of it: they stay in kyc.
+message KybParty {
+  string party_id = 1;
+  string full_name = 2;
+  string role = 3;                           // director | ubo | signatory
+  double ownership_pct = 4;                  // a percentage, not an amount
+  string date_of_birth = 5;                  // YYYY-MM-DD
+  string nationality = 6;
+  bool verified = 7;
+}
+
+message KybPackage {
+  string legal_name = 1;
+  string entity_type = 2;                    // ltd | plc | bn | it
+  string registration_number = 3;
+  string tin = 4;
+  Address registered_address = 5;
+  string sector = 6;
+  string monthly_inflow_band = 7;
+  repeated KybParty parties = 8;
+  repeated DocumentRef documents = 9;
+}
+
+message OpenSubAccountRequest {
+  string org_id = 1;
+  // Replaying a key returns the sub-account it created.
+  string idempotency_key = 2;
+  KybPackage kyb = 3;
+  repeated string currencies = 4;            // what the business asked for
+}
+
+message GetSubAccountRequest {
+  string org_id = 1;
+  string sub_account_id = 2;
+}
+
+message SubAccount {
+  string id = 1;
+  string org_id = 2;
+  string provider = 3;
+  string provider_reference = 4;
+  SubAccountStatus status = 5;
+  repeated CapabilityStatus capabilities = 6;
+  repeated Rfi rfis = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+enum RfiStatus {
+  RFI_STATUS_UNSPECIFIED = 0;
+  RFI_STATUS_OPEN = 1;
+  RFI_STATUS_RESPONDED = 2;
+  RFI_STATUS_RESOLVED = 3;
+  RFI_STATUS_OVERDUE = 4;
+}
+
+message Rfi {
+  string id = 1;
+  string provider_reference = 2;
+  string title = 3;
+  string body = 4;
+  google.protobuf.Timestamp due_at = 5;
+  repeated CapabilityBlock blocks = 6;       // what this RFI holds back
+  RfiStatus status = 7;
+}
+
+message CapabilityBlock {
+  Capability capability = 1;
+  string currency = 2;
+}
+
+message RespondToRfiRequest {
+  string org_id = 1;
+  string rfi_id = 2;
+  string idempotency_key = 3;
+  repeated DocumentRef documents = 4;
+  string note = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Receiving details
+// ---------------------------------------------------------------------------
+
+message IssueReceivingDetailsRequest {
+  string org_id = 1;
+  string sub_account_id = 2;
+  string currency = 3;
+  string idempotency_key = 4;
+}
+
+// ReceivingDetails is what a business gives its payers. The fields are ordered
+// because the dashboard renders them as given.
+message ReceivingDetails {
+  string currency = 1;
+  repeated DetailField fields = 2;           // ordered
+  repeated string rail_names = 3;            // rails these details accept
+  Address bank_address = 4;
+  string provider_reference = 5;
+}
+
+message DetailField {
+  string label = 1;                          // "Account number", "Sort code", "IBAN"
+  string value = 2;
+  bool copyable = 3;
+  string kind = 4;                           // account_number | sort_code | iban | bic | routing_number | bank_name | beneficiary_name | reference
+}
+
+// ---------------------------------------------------------------------------
+// Banks and name enquiry
+// ---------------------------------------------------------------------------
+
+message ListBanksRequest {
+  string currency = 1;
+  string rail = 2;
+}
+
+// Bank identity is canonical: nip_code is the NIP institution code. The adapter
+// maps it to its provider's own list; callers never see provider codes.
+message Bank {
+  string nip_code = 1;
+  string name = 2;
+}
+
+message ListBanksResponse {
+  repeated Bank banks = 1;
+}
+
+// Beneficiary is who a payout goes to. Which fields are required depends on the
+// rail:
+//
+//   NIP (NGN)       bank (NIP institution code), account_number
+//   FPS (GBP)       sort_code, account_number
+//   ACH / FEDWIRE   routing_number, account_number, bank_name, bank_address
+//   SEPA (EUR)      iban, bic
+message Beneficiary {
+  string name = 1;
+  string currency = 2;
+  string rail = 3;
+  string bank = 4;                           // canonical NIP institution code
+  string account_number = 5;
+  string sort_code = 6;
+  string routing_number = 7;
+  string iban = 8;
+  string bic = 9;
+  string bank_name = 10;
+  Address bank_address = 11;
+}
+
+message NameEnquiryRequest {
+  string org_id = 1;
+  Beneficiary beneficiary = 2;
+}
+
+enum NameEnquiryStatus {
+  NAME_ENQUIRY_STATUS_UNSPECIFIED = 0;
+  NAME_ENQUIRY_STATUS_RESOLVED = 1;          // a name came back; the caller compares it
+  NAME_ENQUIRY_STATUS_NOT_FOUND = 2;         // the provider says the account does not exist
+  NAME_ENQUIRY_STATUS_UNSUPPORTED = 3;       // this rail has no name enquiry; a valid answer
+  NAME_ENQUIRY_STATUS_UNAVAILABLE = 4;       // the provider could not answer now
+}
+
+message NameEnquiryResponse {
+  NameEnquiryStatus status = 1;
+  string resolved_name = 2;
+  string provider_reference = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Payouts
+// ---------------------------------------------------------------------------
+
+enum PayoutState {
+  PAYOUT_STATE_UNSPECIFIED = 0;
+  PAYOUT_STATE_ACCEPTED = 1;                 // provider took it; money will move
+  PAYOUT_STATE_PROCESSING = 2;
+  PAYOUT_STATE_SETTLED = 3;
+  PAYOUT_STATE_RETURNED = 4;                 // came back after acceptance
+  PAYOUT_STATE_FAILED = 5;                   // definitively not paid
+  PAYOUT_STATE_UNKNOWN = 6;                  // timeout or ambiguous; NEVER reroute on this alone
+  PAYOUT_STATE_NOT_FOUND = 7;                // only from GetPayoutStatus, when the provider positively confirms no such transfer
+}
+
+message SubmitPayoutRequest {
+  string org_id = 1;
+  // The payout attempt key, for example "PO-20896-1". The provider is called at
+  // most once per key. The payout reference ("PO-20896") stays the same across
+  // attempts; the key does not.
+  string idempotency_key = 2;
+  string payout_reference = 3;
+  money.v1.Money amount = 4;                 // what the beneficiary receives
+  Beneficiary beneficiary = 5;
+  string narration = 6;
+  string sender_name = 7;
+}
+
+message SubmitPayoutResponse {
+  PayoutState state = 1;
+  string provider_reference = 2;
+  // safe_to_reroute is true only when the provider has definitively not
+  // accepted the payment, so the router may try the fallback provider. It is
+  // false for UNKNOWN: a timeout is how a payout gets paid twice.
+  bool safe_to_reroute = 3;
+  string failure_code = 4;
+  string failure_reason = 5;
+}
+
+message GetPayoutStatusRequest {
+  string org_id = 1;
+  string idempotency_key = 2;                // the attempt key
+  string provider_reference = 3;             // optional, if known
+}
+
+message PayoutStatus {
+  PayoutState state = 1;
+  string return_code = 2;                    // for example R03
+  string return_reason = 3;
+  string provider_reference = 4;
+  bool safe_to_reroute = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Inbound, balances, reconciliation
+// ---------------------------------------------------------------------------
+
+message ListPendingInboundRequest {
+  string org_id = 1;
+  string account_number = 2;                 // optional: narrow to one account
+  string currency = 3;
+}
+
+// PendingInbound is money the provider has announced but not settled. It is not
+// a ledger fact; it feeds the wallet's pending_in figure only.
+message PendingInbound {
+  string provider_reference = 1;
+  string account_number = 2;
+  money.v1.Money amount = 3;
+  string payer_name = 4;
+  string rail = 5;
+  google.protobuf.Timestamp announced_at = 6;
+  google.protobuf.Timestamp expected_at = 7;
+}
+
+message ListPendingInboundResponse {
+  repeated PendingInbound items = 1;
+}
+
+message GetProviderBalanceRequest {
+  string currency = 1;
+}
+
+// ProviderBalance is what the provider says Swiftbon's own account holds. It is
+// the other side of the safeguarding invariant. It is platform-level, so it has
+// no org_id.
+message ProviderBalance {
+  string currency = 1;
+  money.v1.Money ledger = 2;
+  money.v1.Money available = 3;
+  google.protobuf.Timestamp as_of = 4;
+  string account_ref = 5;
+}
+
+message ListProviderTransactionsRequest {
+  string currency = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  string cursor = 4;
+  int32 limit = 5;                           // at most 500
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_INBOUND = 1;
+  DIRECTION_OUTBOUND = 2;
+}
+
+message ProviderTransaction {
+  string provider_reference = 1;
+  string our_reference = 2;                  // the attempt key, when the provider echoes it
+  Direction direction = 3;
+  money.v1.Money amount = 4;
+  money.v1.Money fee = 5;
+  PayoutState state = 6;
+  string counterparty_name = 7;
+  string narration = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+}
+
+message ListProviderTransactionsResponse {
+  repeated ProviderTransaction items = 1;
+  string next_cursor = 2;                    // empty on the last page
+}

@@ -45,6 +45,7 @@ const (
 	FxService_GetQuote_FullMethodName     = "/fx.v1.FxService/GetQuote"
 	FxService_ConsumeQuote_FullMethodName = "/fx.v1.FxService/ConsumeQuote"
 	FxService_GetRates_FullMethodName     = "/fx.v1.FxService/GetRates"
+	FxService_Equivalent_FullMethodName   = "/fx.v1.FxService/Equivalent"
 )
 
 // FxServiceClient is the client API for FxService service.
@@ -68,6 +69,12 @@ type FxServiceClient interface {
 	// pair. Indicative only: nothing can be posted against a rate, only against
 	// a quote.
 	GetRates(ctx context.Context, in *GetRatesRequest, opts ...grpc.CallOption) (*GetRatesResponse, error)
+	// Equivalent expresses an amount in another currency at the MID rate, for
+	// thresholds and indicative totals (approval tiers, the overview's total
+	// position). It is labelled indicative in the response and must never be used
+	// to size a posting: there is no spread in it and no quote behind it. Added for
+	// the web dashboard; additive.
+	Equivalent(ctx context.Context, in *EquivalentRequest, opts ...grpc.CallOption) (*EquivalentResponse, error)
 }
 
 type fxServiceClient struct {
@@ -118,6 +125,16 @@ func (c *fxServiceClient) GetRates(ctx context.Context, in *GetRatesRequest, opt
 	return out, nil
 }
 
+func (c *fxServiceClient) Equivalent(ctx context.Context, in *EquivalentRequest, opts ...grpc.CallOption) (*EquivalentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EquivalentResponse)
+	err := c.cc.Invoke(ctx, FxService_Equivalent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FxServiceServer is the server API for FxService service.
 // All implementations must embed UnimplementedFxServiceServer
 // for forward compatibility.
@@ -139,6 +156,12 @@ type FxServiceServer interface {
 	// pair. Indicative only: nothing can be posted against a rate, only against
 	// a quote.
 	GetRates(context.Context, *GetRatesRequest) (*GetRatesResponse, error)
+	// Equivalent expresses an amount in another currency at the MID rate, for
+	// thresholds and indicative totals (approval tiers, the overview's total
+	// position). It is labelled indicative in the response and must never be used
+	// to size a posting: there is no spread in it and no quote behind it. Added for
+	// the web dashboard; additive.
+	Equivalent(context.Context, *EquivalentRequest) (*EquivalentResponse, error)
 	mustEmbedUnimplementedFxServiceServer()
 }
 
@@ -160,6 +183,9 @@ func (UnimplementedFxServiceServer) ConsumeQuote(context.Context, *ConsumeQuoteR
 }
 func (UnimplementedFxServiceServer) GetRates(context.Context, *GetRatesRequest) (*GetRatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRates not implemented")
+}
+func (UnimplementedFxServiceServer) Equivalent(context.Context, *EquivalentRequest) (*EquivalentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Equivalent not implemented")
 }
 func (UnimplementedFxServiceServer) mustEmbedUnimplementedFxServiceServer() {}
 func (UnimplementedFxServiceServer) testEmbeddedByValue()                   {}
@@ -254,6 +280,24 @@ func _FxService_GetRates_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FxService_Equivalent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EquivalentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FxServiceServer).Equivalent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FxService_Equivalent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FxServiceServer).Equivalent(ctx, req.(*EquivalentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FxService_ServiceDesc is the grpc.ServiceDesc for FxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -276,6 +320,10 @@ var FxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRates",
 			Handler:    _FxService_GetRates_Handler,
+		},
+		{
+			MethodName: "Equivalent",
+			Handler:    _FxService_Equivalent_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

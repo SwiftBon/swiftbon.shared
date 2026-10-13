@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+// Package identity.v1 is what swiftbon.identity.service serves to the other
+// services: session resolution for the gateway, API-key authentication, step-up
+// consumption, and the lookups communication and approvals need.
+//
+// Browsers never call it. Services call it with the principal metadata
+// (x-swiftbon-principal) when acting for a user, and with the service identity
+// otherwise.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "identity.swiftbon.com". Branch on the reason, never on the message:
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   SESSION_NOT_FOUND       NOT_FOUND            unknown, expired or revoked session
+//   API_KEY_INVALID         UNAUTHENTICATED      unknown, revoked or disallowed IP
+//   STEP_UP_INVALID         PERMISSION_DENIED    unknown, expired, already used, or bound to a different action
+//   NOT_FOUND               NOT_FOUND
+//   INTERNAL                INTERNAL
+package identity.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/identity/v1;identityv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.identity.v1";
+option java_outer_classname = "IdentityProto";
+
+service Identity {
+  // ResolveSession turns the opaque session id from the cookie into the facts
+  // the gateway needs to mint a principal token.
+  rpc ResolveSession(ResolveSessionRequest) returns (ResolveSessionResponse);
+
+  // AuthenticateApiKey checks an sbk_live_ key (hash lookup, IP allowlist) and
+  // returns the scopes. API keys can never approve.
+  rpc AuthenticateApiKey(AuthenticateApiKeyRequest) returns (AuthenticateApiKeyResponse);
+
+  // ConsumeStepUp spends a single-use step-up token bound to
+  // {user, org, action, resource_ref}. A token minted for approve:APR-1001
+  // cannot approve APR-1002. Approvals, payouts, fx and identity itself call it
+  // before acting.
+  rpc ConsumeStepUp(ConsumeStepUpRequest) returns (ConsumeStepUpResponse);
+
+  rpc GetUser(GetUserRequest) returns (User);
+
+  // ResolveRecipients expands roles and user ids to people with contact
+  // details, for notifications.
+  rpc ResolveRecipients(ResolveRecipientsRequest) returns (ResolveRecipientsResponse);
+
+  rpc GetOrganisation(GetOrganisationRequest) returns (Organisation);
+
+  // SetOrganisationStatus moves an organisation between onboarding, active,
+  // restricted, declined and closed. Onboarding calls it on a KYB decision.
+  rpc SetOrganisationStatus(SetOrganisationStatusRequest) returns (Organisation);
+}
+
+enum AuthLevel {
+  AUTH_LEVEL_UNSPECIFIED = 0;
+  AUTH_LEVEL_FIRST_FACTOR = 1;               // email code only
+  AUTH_LEVEL_MFA = 2;                        // plus TOTP
+  AUTH_LEVEL_MFA_DEVICE = 3;                 // plus a bound WebAuthn device
+}
+
+enum Realm {
+  REALM_UNSPECIFIED = 0;
+  REALM_CUSTOMER = 1;
+  REALM_STAFF = 2;
+}
+
+message ResolveSessionRequest {
+  string session_id = 1;
+  string source_ip = 2;
+  string user_agent = 3;
+}
+
+message ResolveSessionResponse {
+  string session_id = 1;
+  string user_id = 2;
+  string org_id = 3;                         // empty for a staff session that is not impersonating
+  string role = 4;
+  repeated string perms = 5;
+  repeated string amr = 6;                   // email_code, totp, webauthn
+  AuthLevel auth_level = 7;
+  bool device_bound = 8;
+  string impersonator_id = 9;                // set during an impersonation session
+  bool read_only = 10;
+  Realm realm = 11;
+  google.protobuf.Timestamp idle_expires_at = 12;
+  google.protobuf.Timestamp absolute_expires_at = 13;
+}
+
+message AuthenticateApiKeyRequest {
+  string key = 1;                            // the full secret; never logged
+  string source_ip = 2;
+}
+
+message AuthenticateApiKeyResponse {
+  string key_id = 1;
+  string org_id = 2;
+  string created_by = 3;                     // user id of the Owner who approved it
+  repeated string scopes = 4;
+  repeated string perms = 5;
+}
+
+message ConsumeStepUpRequest {
+  string token = 1;
+  string user_id = 2;
+  string org_id = 3;
+  string action = 4;                         // approve | convert | create_api_key | ...
+  string resource_ref = 5;                   // APR-1001, a quote id, ...
+}
+
+message ConsumeStepUpResponse {
+  bool consumed = 1;
+  google.protobuf.Timestamp consumed_at = 2;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+  string org_id = 2;                         // optional; adds the membership in that organisation
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  string status = 4;                         // active | pending_enrolment | suspended
+  string role = 5;                           // in org_id, when requested
+  string mfa_summary = 6;                    // for example "TOTP · 1 device"
+  google.protobuf.Timestamp last_active_at = 7;
+}
+
+message ResolveRecipientsRequest {
+  string org_id = 1;
+  repeated string roles = 2;
+  repeated string user_ids = 3;
+}
+
+message Recipient {
+  string user_id = 1;
+  string email = 2;
+  string phone = 3;
+  string display_name = 4;
+  string role = 5;
+  string locale = 6;
+}
+
+message ResolveRecipientsResponse {
+  repeated Recipient recipients = 1;
+}
+
+message GetOrganisationRequest {
+  string org_id = 1;
+}
+
+message Organisation {
+  string id = 1;
+  string kind = 2;                           // business | personal
+  string display_name = 3;
+  string status = 4;                         // onboarding | active | restricted | declined | closed
+  string home_country = 5;
+  string reporting_currency = 6;
+}
+
+message SetOrganisationStatusRequest {
+  string org_id = 1;
+  string status = 2;
+  string reason = 3;
+  string actor_ref = 4;                      // staff id or "system:<service>"
+  string decision_ref = 5;                   // DEC-####, when the change follows a decision
+}

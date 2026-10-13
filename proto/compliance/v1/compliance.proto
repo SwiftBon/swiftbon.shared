@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+// Package compliance.v1 is what swiftbon.compliance.service serves to the
+// services that need a decision before moving money: payout-time screening of a
+// counterparty, and an audit-recording fallback for services that have no
+// transactional outbox.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "compliance.swiftbon.com":
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   SCREENING_UNAVAILABLE   UNAVAILABLE          no screening result; the caller must NOT treat this as clear
+//   INTERNAL                INTERNAL
+package compliance.v1;
+
+import "google/protobuf/timestamp.proto";
+import "money/v1/money.proto";
+import "rails/v1/rails.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/compliance/v1;compliancev1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.compliance.v1";
+option java_outer_classname = "ComplianceProto";
+
+service Compliance {
+  // ScreenCounterparty screens a beneficiary or payee. It runs when a
+  // beneficiary is added and again at every payout.
+  rpc ScreenCounterparty(ScreenCounterpartyRequest) returns (ScreenCounterpartyResponse);
+
+  // RecordAudit appends one entry to the audit log. Services with an outbox
+  // publish audit-recorded instead; this is the fallback for those without.
+  rpc RecordAudit(RecordAuditRequest) returns (RecordAuditResponse);
+}
+
+message ScreenCounterpartyRequest {
+  string org_id = 1;
+  string name = 2;
+  string country = 3;                        // ISO 3166-1 alpha-2
+  rails.v1.Beneficiary rail_details = 4;
+  string subject_ref = 5;                    // BEN-3391 or PO-20896
+  optional money.v1.Money amount = 6;        // set when screening a payout
+  string idempotency_key = 7;
+}
+
+// Outcome is what the caller acts on. REVIEW and BLOCKED both stop the payout;
+// REVIEW opens a case and may later be released by a person.
+enum ScreenOutcome {
+  SCREEN_OUTCOME_UNSPECIFIED = 0;
+  SCREEN_OUTCOME_CLEAR = 1;
+  SCREEN_OUTCOME_REVIEW = 2;
+  SCREEN_OUTCOME_BLOCKED = 3;
+}
+
+message ScreenCounterpartyResponse {
+  ScreenOutcome outcome = 1;
+  string case_reference = 2;                 // CASE-####, when a case was opened
+  string screening_reference = 3;
+  google.protobuf.Timestamp screened_at = 4;
+}
+
+message AuditActor {
+  string user_id = 1;
+  string staff_id = 2;
+  string system = 3;                         // the service name, for system actions
+  string via = 4;                            // session | api_key | impersonation | system
+}
+
+// RecordAuditRequest mirrors the audit-recorded event.
+message RecordAuditRequest {
+  string org_id = 1;
+  AuditActor actor = 2;
+  string action = 3;
+  string subject_ref = 4;
+  bytes before_json = 5;
+  bytes after_json = 6;
+  string request_id = 7;
+  string ip = 8;
+  string user_agent = 9;
+  google.protobuf.Timestamp at = 10;
+  string idempotency_key = 11;
+}
+
+message RecordAuditResponse {
+  string audit_id = 1;
+}

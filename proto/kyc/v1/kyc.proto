@@ -1,0 +1,280 @@
+syntax = "proto3";
+
+// Package kyc.v1 is what swiftbon.kyc.service serves to onboarding and
+// compliance for business onboarding: registry (CAC) lookup, verification of a
+// director or owner who is not a customer, hosted liveness, screening of persons
+// and entities, and business address verification.
+//
+// kyc's existing local proto stays for legacy callers (the WhatsApp flow, which
+// resolves individuals by phone number). This package is subject-based: a person
+// is identified by org_id and party_id, not by a phone number in the account
+// service.
+//
+// Sensitive fields. BVN, NIN and document numbers travel in these requests and
+// nowhere else; kyc encrypts them at rest, masks them in every response and
+// never logs them. Responses carry only masked values (•••••••4821). Biometric
+// data never reaches Swiftbon: liveness is vendor-hosted and only the result is
+// stored.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "kyc.swiftbon.com":
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   NOT_FOUND               NOT_FOUND
+//   PROVIDER_UNAVAILABLE    UNAVAILABLE          the vendor could not be reached; retry
+//   LIVENESS_LOCKED         FAILED_PRECONDITION  attempts exhausted; only ops can release
+//   NOT_CONFIGURED          FAILED_PRECONDITION  no provider for this country or list
+//   INTERNAL                INTERNAL
+package kyc.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/kyc/v1;kycv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.kyc.v1";
+option java_outer_classname = "KycProto";
+
+service Kyc {
+  // RegistryLookup asks the business registry for a company by registration
+  // number. A match seeds the application's related parties.
+  rpc RegistryLookup(RegistryLookupRequest) returns (RegistryLookupResponse);
+
+  // VerifyRelatedParty starts verification of a director, owner or signatory:
+  // BVN to NIN cross-match, ID check, screening. It returns at once; poll
+  // GetRelatedPartyVerification or wait for related-party-verification-completed.
+  rpc VerifyRelatedParty(VerifyRelatedPartyRequest) returns (RelatedPartyVerification);
+  rpc GetRelatedPartyVerification(GetRelatedPartyVerificationRequest) returns (RelatedPartyVerification);
+
+  // CreateLivenessSession creates a vendor-hosted liveness session for a party.
+  // The third failure locks the party until ReleaseLivenessLock.
+  rpc CreateLivenessSession(CreateLivenessSessionRequest) returns (LivenessSession);
+  rpc ReleaseLivenessLock(ReleaseLivenessLockRequest) returns (LivenessSession);
+
+  // Screen checks a person or an entity against sanctions, PEP and adverse
+  // media lists. A business must never go live unscreened.
+  rpc Screen(ScreenRequest) returns (ScreenResponse);
+
+  // VerifyBusinessAddress starts physical address verification for the business.
+  rpc VerifyBusinessAddress(VerifyBusinessAddressRequest) returns (BusinessAddressVerification);
+  rpc GetBusinessAddressVerification(GetBusinessAddressVerificationRequest) returns (BusinessAddressVerification);
+}
+
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+message RegistryLookupRequest {
+  string org_id = 1;
+  string country = 2;                        // ISO 3166-1 alpha-2; only NG is supported today
+  string registration_number = 3;
+  string entity_type = 4;                    // ltd | plc | bn | it
+}
+
+enum RegistryLookupStatus {
+  REGISTRY_LOOKUP_STATUS_UNSPECIFIED = 0;
+  REGISTRY_LOOKUP_STATUS_MATCHED = 1;
+  REGISTRY_LOOKUP_STATUS_NO_MATCH = 2;
+  REGISTRY_LOOKUP_STATUS_UNAVAILABLE = 3;
+}
+
+message RegistryOfficer {
+  string full_name = 1;
+  string role = 2;                           // director | secretary | shareholder
+  double ownership_pct = 3;
+}
+
+message RegistryLookupResponse {
+  RegistryLookupStatus status = 1;
+  string legal_name = 2;
+  string registered_on = 3;                  // YYYY-MM-DD
+  string registry_status = 4;                // active | struck_off | ...
+  repeated RegistryOfficer officers = 5;
+  string provider_reference = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Related parties
+// ---------------------------------------------------------------------------
+
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  VERIFICATION_STATUS_NOT_STARTED = 1;
+  VERIFICATION_STATUS_CHECKING = 2;
+  VERIFICATION_STATUS_VERIFIED = 3;
+  VERIFICATION_STATUS_RECORDS_DISAGREE = 4;
+  VERIFICATION_STATUS_LIVENESS_FAILED = 5;
+  VERIFICATION_STATUS_LOCKED = 6;
+}
+
+message PersonDetails {
+  string full_name = 1;
+  string date_of_birth = 2;                  // YYYY-MM-DD
+  string phone = 3;
+  string email = 4;
+  string country = 5;
+}
+
+message VerifyRelatedPartyRequest {
+  string org_id = 1;
+  string application_id = 2;
+  string party_id = 3;
+  PersonDetails person = 4;
+  // bvn and nin are written once and never read back in full.
+  string bvn = 5;
+  string nin = 6;
+  string id_type = 7;                        // passport | drivers_licence | voters_card | nin_slip
+  string id_document_id = 8;                 // documents service id
+  string idempotency_key = 9;
+}
+
+message GetRelatedPartyVerificationRequest {
+  string org_id = 1;
+  string party_id = 2;
+}
+
+// IdentityRecord is what one source says about a person, shown when two sources
+// disagree. Numbers are masked.
+message IdentityRecord {
+  string source = 1;                         // bvn | nin
+  string full_name = 2;
+  string date_of_birth = 3;
+  string masked_number = 4;
+}
+
+message RelatedPartyVerification {
+  string org_id = 1;
+  string party_id = 2;
+  VerificationStatus status = 3;
+  // records is set when status is RECORDS_DISAGREE: both records, so the person
+  // can correct and retry.
+  repeated IdentityRecord records = 4;
+  double name_match_score = 5;
+  int32 liveness_attempts_used = 6;
+  int32 liveness_attempts_max = 7;
+  ScreenOutcome screening = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CreateLivenessSessionRequest {
+  string org_id = 1;
+  string party_id = 2;
+  string idempotency_key = 3;
+}
+
+message LivenessSession {
+  string session_id = 1;
+  string party_id = 2;
+  string vendor_url = 3;                     // the gateway wraps it in a short link
+  google.protobuf.Timestamp expires_at = 4;
+  int32 attempts_used = 5;
+  int32 attempts_max = 6;
+  bool locked = 7;
+}
+
+message ReleaseLivenessLockRequest {
+  string org_id = 1;
+  string party_id = 2;
+  string actor_id = 3;                       // the staff member releasing it
+  string reason = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Screening
+// ---------------------------------------------------------------------------
+
+enum SubjectKind {
+  SUBJECT_KIND_UNSPECIFIED = 0;
+  SUBJECT_KIND_PERSON = 1;
+  SUBJECT_KIND_ENTITY = 2;
+}
+
+message ScreenRequest {
+  string org_id = 1;
+  SubjectKind kind = 2;
+  string name = 3;
+  optional string date_of_birth = 4;         // persons only
+  optional string country = 5;
+  string subject_ref = 6;                    // party id, beneficiary reference, ...
+  string idempotency_key = 7;
+}
+
+enum ScreenStatus {
+  SCREEN_STATUS_UNSPECIFIED = 0;
+  SCREEN_STATUS_CLEAR = 1;
+  SCREEN_STATUS_MATCHED = 2;
+  // ERRORED and SKIPPED are not passes. A caller must treat them as review.
+  SCREEN_STATUS_ERRORED = 3;
+  SCREEN_STATUS_SKIPPED = 4;
+}
+
+message ScreenMatch {
+  string match_id = 1;
+  string list_type = 2;                      // sanctions | pep | adverse_media
+  string list_name = 3;
+  string matched_name = 4;
+  double score = 5;
+  repeated string countries = 6;
+}
+
+message ScreenOutcome {
+  ScreenStatus status = 1;
+  int32 match_count = 2;
+  bool sanctions_match = 3;
+  bool pep_match = 4;
+  bool adverse_media_match = 5;
+  repeated ScreenMatch matches = 6;
+  string provider = 7;
+  string provider_reference = 8;
+  google.protobuf.Timestamp screened_at = 9;
+}
+
+message ScreenResponse {
+  ScreenOutcome outcome = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Business address
+// ---------------------------------------------------------------------------
+
+message BusinessAddress {
+  string line1 = 1;
+  string line2 = 2;
+  string city = 3;
+  string state = 4;
+  string lga = 5;
+  string landmark = 6;
+  string postal_code = 7;
+  string country = 8;
+}
+
+message VerifyBusinessAddressRequest {
+  string org_id = 1;
+  string application_id = 2;
+  string business_name = 3;
+  BusinessAddress address = 4;
+  string contact_phone = 5;
+  string idempotency_key = 6;
+}
+
+message GetBusinessAddressVerificationRequest {
+  string org_id = 1;
+  string application_id = 2;
+}
+
+enum AddressVerificationStatus {
+  ADDRESS_VERIFICATION_STATUS_UNSPECIFIED = 0;
+  ADDRESS_VERIFICATION_STATUS_PENDING = 1;
+  ADDRESS_VERIFICATION_STATUS_VERIFIED = 2;
+  ADDRESS_VERIFICATION_STATUS_FAILED = 3;
+}
+
+message BusinessAddressVerification {
+  string org_id = 1;
+  string application_id = 2;
+  AddressVerificationStatus status = 3;
+  string provider = 4;
+  string provider_reference = 5;
+  string failure_reason = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}

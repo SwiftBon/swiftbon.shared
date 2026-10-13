@@ -24,6 +24,42 @@ service Postings {
   rpc PostTransaction(PostingRequest) returns (BaseResponse) {}
   rpc ReverseTransaction(ReversalRequest) returns (BaseResponse) {}
   rpc GetTransactionByReference(GetTransactionByReferenceRequest) returns (BaseResponse) {}
+
+  // ---- Added for the web dashboard. Additive: nothing above changed. --------
+  //
+  // The RPCs below return typed messages and report failures as gRPC statuses
+  // carrying a google.rpc.ErrorInfo with domain "postings.swiftbon.com":
+  //
+  //   reason                  grpc code            meaning
+  //   VALIDATION              INVALID_ARGUMENT
+  //   NOT_FOUND               NOT_FOUND
+  //   INSUFFICIENT_AVAILABLE  FAILED_PRECONDITION  available balance cannot cover the hold
+  //   HOLD_NOT_ACTIVE         FAILED_PRECONDITION  already released, captured or expired
+  //   NO_ADAPTER_ACCEPTANCE   FAILED_PRECONDITION  capture without an adapter acceptance record
+  //   REFERENCE_IN_USE        ALREADY_EXISTS       reference reused with a different request
+  //   INTERNAL                INTERNAL
+  //
+  // Every request carries org_id; accounts and holds outside that organisation
+  // do not exist as far as the caller can tell.
+
+  // PlaceHold reserves funds. available = ledger - sum(active holds). Replaying
+  // a reference returns the hold it created.
+  rpc PlaceHold(PlaceHoldRequest) returns (Hold) {}
+  // ReleaseHold ends a hold without a debit.
+  rpc ReleaseHold(ReleaseHoldRequest) returns (Hold) {}
+  // CaptureHold consumes a hold in the same transaction as the posting that
+  // debits it. It is refused without an adapter acceptance record.
+  rpc CaptureHold(CaptureHoldRequest) returns (CaptureHoldResponse) {}
+  rpc GetHold(GetHoldRequest) returns (Hold) {}
+  // GetAvailableBalances returns ledger, held and available per account.
+  rpc GetAvailableBalances(GetAvailableBalancesRequest) returns (GetAvailableBalancesResponse) {}
+  // GetStatement summarises a period; ties_out says opening + in - out = closing.
+  rpc GetStatement(GetStatementRequest) returns (Statement) {}
+  // ListEntries pages through ledger entries, newest first.
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse) {}
+  // SumCustomerLiabilities is the total owed to customers in a currency, the
+  // customer side of the safeguarding invariant. Platform-level: no org_id.
+  rpc SumCustomerLiabilities(SumCustomerLiabilitiesRequest) returns (SumCustomerLiabilitiesResponse) {}
 }
 
 message ProcessTransferRequest {
@@ -78,6 +114,18 @@ message PostingRequest {
 
   // The quote this posting settles against, when it crosses currencies.
   optional string fx_quote_id = 12;
+
+  // When set, the credit legs of this posting and a hold on the credited funds
+  // commit in one transaction: the funds are credited but not spendable until
+  // the hold is released. Inbound payments use it so nothing is spendable before
+  // screening has run. The hold is placed on the first credit leg's account.
+  optional HoldSpec hold = 13;
+}
+
+message HoldSpec {
+  string reason = 1;                       // for example "inbound_screening"
+  string owner = 2;                        // the service that must release it, for example "compliance"
+  google.protobuf.Timestamp expires_at = 3;
 }
 
 message PostingRecord {
@@ -121,4 +169,159 @@ message BaseResponse {
   string response_code = 1;
   string response_description = 2;
   string response_message = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Holds
+// ---------------------------------------------------------------------------
+
+enum HoldStatus {
+  HOLD_STATUS_UNSPECIFIED = 0;
+  HOLD_STATUS_ACTIVE = 1;
+  HOLD_STATUS_RELEASED = 2;
+  HOLD_STATUS_CAPTURED = 3;
+  HOLD_STATUS_EXPIRED = 4;
+}
+
+message Hold {
+  string id = 1;
+  string org_id = 2;
+  string account_number = 3;
+  money.v1.Money amount = 4;
+  string reason = 5;                       // payout | inbound_screening | ...
+  string owner = 6;                        // the service that must release or capture it
+  string reference = 7;                    // unique per org; the idempotency handle
+  HoldStatus status = 8;
+  google.protobuf.Timestamp placed_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  google.protobuf.Timestamp released_at = 11;
+  google.protobuf.Timestamp captured_at = 12;
+  string posting_reference = 13;           // the posting that captured it
+}
+
+message PlaceHoldRequest {
+  string org_id = 1;
+  string account_number = 2;
+  money.v1.Money amount = 3;
+  string reason = 4;
+  string owner = 5;
+  string reference = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message ReleaseHoldRequest {
+  string org_id = 1;
+  string hold_id = 2;
+  string reason = 3;
+  string actor_ref = 4;
+}
+
+message CaptureHoldRequest {
+  string org_id = 1;
+  string hold_id = 2;
+  // The posting that debits the held funds. It is committed in the same
+  // transaction as the capture.
+  PostingRequest posting = 3;
+  // adapter_acceptance_ref is the rail adapter's acceptance of the payment (its
+  // provider reference). Capture without one is refused: funds are held at
+  // submission and debited only once the rail has accepted.
+  string adapter_acceptance_ref = 4;
+}
+
+message CaptureHoldResponse {
+  Hold hold = 1;
+  string posting_reference = 2;
+}
+
+message GetHoldRequest {
+  string org_id = 1;
+  string hold_id = 2;                      // either hold_id or reference
+  string reference = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Balances, statements, entries
+// ---------------------------------------------------------------------------
+
+message GetAvailableBalancesRequest {
+  string org_id = 1;
+  // owner_id narrows to one account owner within the organisation. For a
+  // business it is the organisation id itself.
+  string owner_id = 2;
+}
+
+message AccountBalance {
+  string account_number = 1;
+  string currency = 2;
+  money.v1.Money ledger = 3;
+  money.v1.Money held = 4;                 // sum of active holds
+  money.v1.Money available = 5;            // ledger - held
+}
+
+message GetAvailableBalancesResponse {
+  repeated AccountBalance balances = 1;
+}
+
+message GetStatementRequest {
+  string org_id = 1;
+  string account_number = 2;
+  google.protobuf.Timestamp from = 3;
+  google.protobuf.Timestamp to = 4;
+}
+
+message Statement {
+  string account_number = 1;
+  money.v1.Money opening_balance = 2;
+  money.v1.Money closing_balance = 3;
+  money.v1.Money total_in = 4;
+  money.v1.Money total_out = 5;
+  int64 entries_count = 6;
+  // ties_out is true when opening + total_in - total_out == closing.
+  bool ties_out = 7;
+}
+
+enum EntryKind {
+  ENTRY_KIND_UNSPECIFIED = 0;
+  ENTRY_KIND_IN = 1;
+  ENTRY_KIND_OUT = 2;
+  ENTRY_KIND_FEE = 3;
+  ENTRY_KIND_FX = 4;
+  ENTRY_KIND_REVERSAL = 5;
+}
+
+message ListEntriesRequest {
+  string org_id = 1;
+  string account_number = 2;
+  google.protobuf.Timestamp from = 3;
+  google.protobuf.Timestamp to = 4;
+  EntryKind kind = 5;                      // unspecified means all kinds
+  string cursor = 6;
+  int32 limit = 7;                         // at most 100
+}
+
+message LedgerEntry {
+  string id = 1;
+  string posting_reference = 2;
+  string account_number = 3;
+  money.v1.Money amount = 4;               // signed: negative debits the account
+  money.v1.Money balance_after = 5;
+  EntryKind kind = 6;
+  string narration = 7;
+  string counterparty_name = 8;
+  string hold_id = 9;                      // set while a hold from this entry is active
+  google.protobuf.Timestamp occurred_at = 10;
+}
+
+message ListEntriesResponse {
+  repeated LedgerEntry entries = 1;
+  string next_cursor = 2;                  // empty on the last page
+}
+
+message SumCustomerLiabilitiesRequest {
+  string currency = 1;
+}
+
+message SumCustomerLiabilitiesResponse {
+  money.v1.Money total = 1;
+  google.protobuf.Timestamp as_of = 2;
 }
