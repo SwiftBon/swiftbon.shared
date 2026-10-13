@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (planned as v0.1.0, for the web dashboard)
+## v0.1.0 (web dashboard)
 
 Everything below is additive. Nothing in `v0.0.1` was removed, renamed or
 renumbered; `proto/wirecompat_test.go` proves the `v0.0.1` wire bytes still
