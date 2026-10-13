@@ -1,0 +1,21 @@
+{
+  "org_id": "57c3443a-069f-5282-b978-a0143570782a",
+  "actor": {
+    "user_id": "c630696b-9ffe-55ef-b72a-e732ae5924d7",
+    "staff_id": "9c9e5b3c-14ca-5691-9d67-641bb94ed2a5",
+    "system": "system",
+    "via": "via"
+  },
+  "action": "action",
+  "subject_ref": "subjectref",
+  "before": {
+    "key": "value"
+  },
+  "after": {
+    "key": "value"
+  },
+  "request_id": "requestid",
+  "ip": "ip",
+  "user_agent": "useragent",
+  "at": "2026-10-13T12:00:00Z"
+}

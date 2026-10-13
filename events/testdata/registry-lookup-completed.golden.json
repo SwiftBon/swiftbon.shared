@@ -1,0 +1,11 @@
+{
+  "org_id": "566b5f90-484f-59fe-9a60-7762277c3c38",
+  "application_id": "5dbd3caf-5bb4-5a33-8dd4-12a9c3799f03",
+  "registration_number": "registrationnumber",
+  "status": "status",
+  "legal_name": "legalname",
+  "registered_on": "registeredon",
+  "registry_status": "registrystatus",
+  "officers_on_file": 3,
+  "completed_at": "2026-10-13T12:00:00Z"
+}

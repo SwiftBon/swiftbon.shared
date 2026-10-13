@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "customer_ref": "customerref",
+  "phonenumber": "phonenumber",
+  "provider": "provider",
+  "provider_reference": "providerreference",
+  "country": "country",
+  "screened_at": "2026-10-13T12:00:00Z",
+  "status": "status",
+  "match_count": 3,
+  "sanctions_match": true,
+  "pep_match": true,
+  "adverse_media_match": true,
+  "org_id": "afa16629-15d3-5626-af68-5186df63a84a",
+  "subject_kind": "subjectkind",
+  "subject_ref": "subjectref"
+}

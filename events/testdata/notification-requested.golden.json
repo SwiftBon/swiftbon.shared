@@ -1,0 +1,16 @@
+{
+  "org_id": "e4825550-4fbe-5744-a6f8-8051e051894a",
+  "template": "template",
+  "locale": "locale",
+  "to": [
+    {
+      "email": "email",
+      "phone": "phone",
+      "user_id": "0a93d7ef-4dc3-5657-a949-382aaf878da4"
+    }
+  ],
+  "vars": {
+    "key": "value"
+  },
+  "idempotency_key": "idempotencykey"
+}

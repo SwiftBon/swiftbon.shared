@@ -1,0 +1,11 @@
+{
+  "org_id": "a8caa3c5-b579-5d9f-8ae8-2e0ed08fe2d2",
+  "application_id": "20e653ca-ea4e-512f-bd28-8c20ba30c62c",
+  "entity_type": "entitytype",
+  "legal_name": "legalname",
+  "currencies": [
+    "currencies[0]"
+  ],
+  "submitted_by": "634698a7-159d-5683-b906-bc802c1b0c3d",
+  "submitted_at": "2026-10-13T12:00:00Z"
+}

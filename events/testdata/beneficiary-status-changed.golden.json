@@ -1,0 +1,10 @@
+{
+  "org_id": "dc531809-7583-56f8-b62b-2d1d81f0c6f6",
+  "beneficiary_id": "062766ca-b545-586e-9e39-1be89a11d069",
+  "reference": "reference",
+  "status": "status",
+  "previous_status": "previousstatus",
+  "cooling_off_until": "2026-10-13T12:00:00Z",
+  "reason": "reason",
+  "changed_at": "2026-10-13T12:00:00Z"
+}

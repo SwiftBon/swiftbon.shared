@@ -1,0 +1,9 @@
+{
+  "org_id": "d01a0fde-8674-52c0-aa4f-a74c27c505cf",
+  "invitation_id": "db4a3432-533b-5a57-b20b-e8b832c8e4b2",
+  "email": "email",
+  "role": "role",
+  "invited_by": "c526d393-a920-5dea-9d11-02c61ee20828",
+  "approval_request_id": "370f58b5-a80f-5ca4-b4ee-1bc54234663f",
+  "expires_at": "2026-10-13T12:00:00Z"
+}

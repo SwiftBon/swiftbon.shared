@@ -1,0 +1,10 @@
+{
+  "org_id": "776a39d8-0913-5ab9-968f-7cf4c8ce7166",
+  "approval_id": "138d4a73-dc09-5289-a270-fe4683737984",
+  "reference": "reference",
+  "kind": "kind",
+  "subject_ref": "subjectref",
+  "subject_service": "subjectservice",
+  "initiated_by": "158638c1-d0c8-5af5-b52d-b323c9376124",
+  "expired_at": "2026-10-13T12:00:00Z"
+}

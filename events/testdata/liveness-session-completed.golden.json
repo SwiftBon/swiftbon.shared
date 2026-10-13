@@ -1,0 +1,11 @@
+{
+  "org_id": "118e966e-9123-54b3-b4d9-5ad1a1813b41",
+  "party_id": "4a8097eb-7a77-59f9-9dc2-d44ab0965ab1",
+  "session_id": "38099c65-5745-5dcf-aec0-e23a08533abb",
+  "passed": true,
+  "attempts_used": 3,
+  "attempts_max": 3,
+  "locked": true,
+  "provider_reference": "providerreference",
+  "completed_at": "2026-10-13T12:00:00Z"
+}

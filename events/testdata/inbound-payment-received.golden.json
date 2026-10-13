@@ -1,0 +1,16 @@
+{
+  "org_id": "b256bdd2-7495-5283-93fb-12117ff7d694",
+  "provider": "provider",
+  "provider_reference": "providerreference",
+  "account_number": "accountnumber",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "rail": "rail",
+  "payer_name": "payername",
+  "payer_account": "payeraccount",
+  "payer_bank": "payerbank",
+  "narration": "narration",
+  "received_at": "2026-10-13T12:00:00Z"
+}

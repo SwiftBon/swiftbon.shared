@@ -1,0 +1,9 @@
+{
+  "org_id": "5811e400-f6f7-5561-8beb-b32f6ef5d3e8",
+  "provider": "provider",
+  "capability": "capability",
+  "currency": "currency",
+  "state": "state",
+  "provider_rfi_reference": "providerrfireference",
+  "changed_at": "2026-10-13T12:00:00Z"
+}

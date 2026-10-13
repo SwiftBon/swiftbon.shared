@@ -1,0 +1,18 @@
+{
+  "org_id": "c8f1de11-9123-5470-84ea-11e020c8b081",
+  "approval_id": "6973ac70-1495-514e-b2ec-470edebddcd1",
+  "reference": "reference",
+  "kind": "kind",
+  "subject_ref": "subjectref",
+  "subject_service": "subjectservice",
+  "summary": "summary",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "initiated_by": "e795da76-954f-5292-b935-f353abac5b73",
+  "approvers_required": 3,
+  "policy_version": 3,
+  "expires_at": "2026-10-13T12:00:00Z",
+  "requested_at": "2026-10-13T12:00:00Z"
+}

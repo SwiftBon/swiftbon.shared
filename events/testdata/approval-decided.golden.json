@@ -1,0 +1,15 @@
+{
+  "org_id": "78cf594e-a190-51e7-a828-3105aee9f15c",
+  "approval_id": "db8b815c-1a5d-586a-8bed-8645e2b6e412",
+  "reference": "reference",
+  "kind": "kind",
+  "subject_ref": "subjectref",
+  "subject_service": "subjectservice",
+  "decision": "decision",
+  "decided_by": [
+    "cf5c75a1-4125-5dee-9709-d048e407ce0c"
+  ],
+  "reason": "reason",
+  "policy_version": 3,
+  "decided_at": "2026-10-13T12:00:00Z"
+}

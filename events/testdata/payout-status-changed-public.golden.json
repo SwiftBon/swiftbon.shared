@@ -1,0 +1,20 @@
+{
+  "org_id": "2aeeb6eb-fe19-59a9-af3b-24918e9595f4",
+  "payout_reference": "payoutreference",
+  "status": "status",
+  "previous_status": "previousstatus",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "fee": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "rail": "rail",
+  "provider": "provider",
+  "return_code": "returncode",
+  "return_reason": "returnreason",
+  "initiated_by": "93b6ed47-c58b-5008-97ab-e8124124d32d",
+  "changed_at": "2026-10-13T12:00:00Z"
+}

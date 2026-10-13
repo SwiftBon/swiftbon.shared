@@ -1,0 +1,16 @@
+{
+  "org_id": "2a76902d-9ef7-5e57-a515-cf806a76e588",
+  "rfi_id": "d31009a9-2398-584a-bb6b-e24d733caa9f",
+  "reference": "reference",
+  "requested_by": "requestedby",
+  "provider": "provider",
+  "title": "title",
+  "due_at": "2026-10-13T12:00:00Z",
+  "blocks": [
+    {
+      "capability": "capability",
+      "currency": "currency"
+    }
+  ],
+  "opened_at": "2026-10-13T12:00:00Z"
+}

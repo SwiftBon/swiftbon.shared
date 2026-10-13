@@ -1,0 +1,10 @@
+{
+  "org_id": "cfb2d728-d12b-58ac-b1f5-a2cdd5fd3208",
+  "capability": "capability",
+  "currency": "currency",
+  "state": "state",
+  "previous_state": "previousstate",
+  "rfi_id": "1e5d508a-186b-5a7f-a85e-337fe475ca9a",
+  "source": "source",
+  "changed_at": "2026-10-13T12:00:00Z"
+}

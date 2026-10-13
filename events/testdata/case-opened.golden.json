@@ -1,0 +1,11 @@
+{
+  "org_id": "212d0332-9efb-5046-bd5b-406ca1c6736c",
+  "case_id": "20c77f50-c16e-5df3-b683-68131955bd82",
+  "reference": "reference",
+  "kind": "kind",
+  "severity": "severity",
+  "subject_ref": "subjectref",
+  "summary": "summary",
+  "sla_due_at": "2026-10-13T12:00:00Z",
+  "opened_at": "2026-10-13T12:00:00Z"
+}

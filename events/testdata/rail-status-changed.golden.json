@@ -1,0 +1,10 @@
+{
+  "org_id": "de1bb652-1954-5bc3-a95e-0f9154df3045",
+  "currency": "currency",
+  "rail": "rail",
+  "provider": "provider",
+  "status": "status",
+  "previous_status": "previousstatus",
+  "detail": "detail",
+  "changed_at": "2026-10-13T12:00:00Z"
+}
