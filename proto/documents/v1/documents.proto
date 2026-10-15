@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+// Package documents.v1 is what swiftbon.documents.service serves to onboarding,
+// support and the gateway. Uploads go from the browser straight to object
+// storage through pre-signed URLs issued by the gateway's REST surface; this
+// service-to-service contract is for reading document state and for generated
+// documents.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "documents.swiftbon.com":
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   NOT_FOUND               NOT_FOUND
+//   NOT_READY               FAILED_PRECONDITION  scanning or checking is not finished
+//   INTERNAL                INTERNAL
+package documents.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/documents/v1;documentsv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.documents.v1";
+option java_outer_classname = "DocumentsProto";
+
+service Documents {
+  rpc GetDocument(GetDocumentRequest) returns (Document);
+  rpc GetCheckResult(GetCheckResultRequest) returns (CheckResult);
+
+  // RenderStatement generates a statement PDF from the ledger (via postings) and
+  // returns at once; document-rendered is published when it is ready.
+  rpc RenderStatement(RenderStatementRequest) returns (Document);
+}
+
+enum DocumentStatus {
+  DOCUMENT_STATUS_UNSPECIFIED = 0;
+  DOCUMENT_STATUS_UPLOADED = 1;
+  DOCUMENT_STATUS_SCANNING = 2;
+  DOCUMENT_STATUS_CHECKING = 3;
+  DOCUMENT_STATUS_ACCEPTED = 4;
+  DOCUMENT_STATUS_REJECTED = 5;
+  DOCUMENT_STATUS_READY = 6;                 // a generated document is available
+}
+
+message GetDocumentRequest {
+  string org_id = 1;
+  string document_id = 2;
+}
+
+message Document {
+  string id = 1;
+  string org_id = 2;
+  string purpose = 3;
+  string filename = 4;
+  string content_type = 5;
+  int64 size_bytes = 6;                      // a size, not an amount
+  DocumentStatus status = 7;
+  string requirement_id = 8;
+  CheckResult check = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp retain_until = 11;
+}
+
+message GetCheckResultRequest {
+  string org_id = 1;
+  string document_id = 2;
+}
+
+message CheckResult {
+  bool passed = 1;
+  // reason_code is cropped_edge | too_old | low_resolution | name_mismatch |
+  // unreadable | wrong_document when the check failed.
+  string reason_code = 2;
+  int32 page = 3;
+  string detail = 4;
+  google.protobuf.Timestamp checked_at = 5;
+}
+
+message RenderStatementRequest {
+  string org_id = 1;
+  string account_number = 2;
+  google.protobuf.Timestamp from = 3;
+  google.protobuf.Timestamp to = 4;
+  string requested_by = 5;
+  string idempotency_key = 6;
+}

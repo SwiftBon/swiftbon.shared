@@ -1,0 +1,11 @@
+{
+  "org_id": "99aaa02f-e549-52ea-8fa7-64d4233aa4ab",
+  "hold_id": "7f586144-f17e-529f-898e-360decea3236",
+  "account_number": "accountnumber",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "reference": "reference",
+  "released_at": "2026-10-13T12:00:00Z"
+}

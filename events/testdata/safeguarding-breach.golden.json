@@ -1,0 +1,17 @@
+{
+  "org_id": "1a2884c2-9bd8-5e19-95ca-de1e1fe906a0",
+  "currency": "currency",
+  "customer_liabilities": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "safeguarded_funds": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "shortfall": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "detected_at": "2026-10-13T12:00:00Z"
+}

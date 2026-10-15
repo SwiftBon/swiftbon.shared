@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// Package treasury.v1 is what swiftbon.treasury.service serves: the health of
+// each payment rail, per provider. Payouts reads it to route (it skips a
+// provider that is degraded or down) and the gateway reads it for the status
+// page and the rail_degraded alert.
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo with domain
+// "treasury.swiftbon.com":
+//
+//   reason                  grpc code            meaning
+//   VALIDATION              INVALID_ARGUMENT
+//   NOT_FOUND               NOT_FOUND            no such currency and rail
+//   INTERNAL                INTERNAL
+package treasury.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "swiftbon.com/shared/proto/gen/go/treasury/v1;treasuryv1";
+option java_multiple_files = true;
+option java_package = "com.swiftbon.treasury.v1";
+option java_outer_classname = "TreasuryProto";
+
+service Treasury {
+  // GetRailStatus returns one provider's status on a rail, or, with no provider,
+  // the aggregate across providers (operational if any provider is) plus each
+  // provider's own status.
+  rpc GetRailStatus(GetRailStatusRequest) returns (RailStatus);
+}
+
+enum Health {
+  HEALTH_UNSPECIFIED = 0;
+  HEALTH_OPERATIONAL = 1;
+  HEALTH_DEGRADED = 2;
+  HEALTH_DOWN = 3;
+}
+
+message GetRailStatusRequest {
+  string currency = 1;
+  string rail = 2;
+  string provider = 3;                       // optional; omit for the rail aggregate
+}
+
+message ProviderStatus {
+  string provider = 1;
+  Health health = 2;
+  string detail = 3;
+  google.protobuf.Timestamp since = 4;
+}
+
+message RailStatus {
+  string currency = 1;
+  string rail = 2;
+  Health health = 3;
+  string detail = 4;
+  google.protobuf.Timestamp since = 5;
+  // providers is set for the aggregate and empty when a provider was named.
+  repeated ProviderStatus providers = 6;
+}

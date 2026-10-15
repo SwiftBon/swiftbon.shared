@@ -1,0 +1,13 @@
+{
+  "org_id": "16d05013-611c-5ed4-8977-9b16a8017929",
+  "account_number": "accountnumber",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "posting_reference": "postingreference",
+  "hold_id": "600e3337-7a70-5050-a12a-5e30ed3d0f0f",
+  "provider": "provider",
+  "provider_reference": "providerreference",
+  "credited_at": "2026-10-13T12:00:00Z"
+}

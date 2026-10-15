@@ -1,0 +1,12 @@
+{
+  "org_id": "ff50c612-8c60-5f74-bfba-d7e520830455",
+  "provider": "provider",
+  "payout_reference": "payoutreference",
+  "attempt_key": "attemptkey",
+  "state": "state",
+  "return_code": "returncode",
+  "return_reason": "returnreason",
+  "provider_reference": "providerreference",
+  "safe_to_reroute": true,
+  "changed_at": "2026-10-13T12:00:00Z"
+}

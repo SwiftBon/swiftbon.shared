@@ -1,0 +1,30 @@
+{
+  "schema_version": 3,
+  "customer_ref": "customerref",
+  "phonenumber": "phonenumber",
+  "full_name": "fullname",
+  "country": "country",
+  "provider": "provider",
+  "provider_reference": "providerreference",
+  "screening_result_id": "screeningresultid",
+  "screened_at": "2026-10-13T12:00:00Z",
+  "is_rescreen": true,
+  "new_match_ids": [
+    "newmatchids[0]"
+  ],
+  "matches": [
+    {
+      "match_id": "matchid",
+      "list_type": "listtype",
+      "list_name": "listname",
+      "matched_name": "matchedname",
+      "score": 0.5,
+      "countries": [
+        "countries[0]"
+      ]
+    }
+  ],
+  "org_id": "d4da97ce-52f8-51c0-b2d5-369b193347ed",
+  "subject_kind": "subjectkind",
+  "subject_ref": "subjectref"
+}

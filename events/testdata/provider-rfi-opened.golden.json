@@ -1,0 +1,15 @@
+{
+  "org_id": "c2f801e6-11f6-54c8-b92d-5d390f5a5a8e",
+  "provider": "provider",
+  "provider_reference": "providerreference",
+  "title": "title",
+  "body": "body",
+  "due_at": "2026-10-13T12:00:00Z",
+  "blocks": [
+    {
+      "capability": "capability",
+      "currency": "currency"
+    }
+  ],
+  "opened_at": "2026-10-13T12:00:00Z"
+}

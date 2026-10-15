@@ -1,0 +1,13 @@
+{
+  "org_id": "cfb2552d-3abd-547d-ae93-6dd1213b3c1c",
+  "hold_id": "981fa71f-134a-5c26-a1f9-45da0cfa29df",
+  "account_number": "accountnumber",
+  "amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "reason": "reason",
+  "owner": "owner",
+  "reference": "reference",
+  "placed_at": "2026-10-13T12:00:00Z"
+}

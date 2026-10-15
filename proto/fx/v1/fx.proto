@@ -52,6 +52,13 @@ service FxService {
   // pair. Indicative only: nothing can be posted against a rate, only against
   // a quote.
   rpc GetRates(GetRatesRequest) returns (GetRatesResponse) {}
+
+  // Equivalent expresses an amount in another currency at the MID rate, for
+  // thresholds and indicative totals (approval tiers, the overview's total
+  // position). It is labelled indicative in the response and must never be used
+  // to size a posting: there is no spread in it and no quote behind it. Added for
+  // the web dashboard; additive.
+  rpc Equivalent(EquivalentRequest) returns (EquivalentResponse) {}
 }
 
 // A quote is requested by fixing exactly one side of the trade: either how much
@@ -149,4 +156,23 @@ message Rate {
   string rate_source = 7;
   google.protobuf.Timestamp observed_at = 8;  // provider's timestamp
   google.protobuf.Timestamp fetched_at = 9;   // when this service fetched it
+}
+
+// EquivalentRequest asks what amount is worth in target_currency at mid.
+message EquivalentRequest {
+  money.v1.Money amount = 1;
+  string target_currency = 2;              // ISO 4217 alpha-3
+}
+
+message EquivalentResponse {
+  // equivalent is amount converted at the mid rate with the same half-up
+  // rounding as money.Convert.
+  money.v1.Money equivalent = 1;
+  // mid_rate is the 10-place decimal string used, as source -> target.
+  string mid_rate = 2;
+  // indicative is always true. It is a field, not an implication, so a client
+  // that stores or displays the value carries the label with it.
+  bool indicative = 3;
+  string basis = 4;                        // always "mid"
+  google.protobuf.Timestamp as_of = 5;     // when the rate was published
 }

@@ -42,7 +42,7 @@ test:
 
 ## test-cover: run the tests with the race detector and write a coverage profile
 test-cover:
-	$(GO) test -race -covermode=atomic -coverprofile=coverage.out ./money/... ./fx/... ./account/...
+	$(GO) test -race -covermode=atomic -coverprofile=coverage.out ./money/... ./fx/... ./account/... ./principal/... ./events/... ./refs/... ./names/... ./settings/
 	@$(GO) tool cover -func=coverage.out | tail -1
 
 ## coverage-gate: fail if coverage falls below COVERAGE_MIN

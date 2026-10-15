@@ -1,0 +1,12 @@
+{
+  "org_id": "c07ed92c-ee92-5edf-bae5-0e9815d7b349",
+  "case_id": "95681846-4dc4-590f-971f-51618a394608",
+  "reference": "reference",
+  "kind": "kind",
+  "subject_ref": "subjectref",
+  "disposition": "disposition",
+  "maker_id": "7e92a5bf-d719-5447-980e-37d0e2240e26",
+  "checker_id": "e9543dba-f773-5a3f-be26-0e4d0eee03fa",
+  "reason": "reason",
+  "decided_at": "2026-10-13T12:00:00Z"
+}

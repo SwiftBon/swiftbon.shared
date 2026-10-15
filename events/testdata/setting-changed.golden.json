@@ -1,0 +1,11 @@
+{
+  "org_id": "ca2ae81c-823a-5d92-b5ed-83dd2aeb3a43",
+  "service": "service",
+  "key": "key",
+  "version": 3,
+  "previous_version": 3,
+  "changed_by": "changedby",
+  "approval_request_id": "0c823de3-10ff-5909-90ad-c0c28d152d0b",
+  "reason": "reason",
+  "effective_from": "2026-10-13T12:00:00Z"
+}

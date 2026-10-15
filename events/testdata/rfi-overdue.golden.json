@@ -1,0 +1,13 @@
+{
+  "org_id": "f328a085-b114-53cc-b9bc-395b18fc88a3",
+  "rfi_id": "17f5f0ec-60ab-54fd-9a94-c187c10b4e6e",
+  "reference": "reference",
+  "due_at": "2026-10-13T12:00:00Z",
+  "blocks": [
+    {
+      "capability": "capability",
+      "currency": "currency"
+    }
+  ],
+  "detected_at": "2026-10-13T12:00:00Z"
+}

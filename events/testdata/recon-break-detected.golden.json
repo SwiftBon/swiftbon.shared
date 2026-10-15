@@ -1,0 +1,21 @@
+{
+  "org_id": "7b00430c-a1d4-5786-a25c-07ce63f7804e",
+  "break_id": "b9c3fbee-f476-5352-b520-056da8fa9ea8",
+  "provider": "provider",
+  "currency": "currency",
+  "kind": "kind",
+  "provider_amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "ledger_amount": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "difference": {
+    "amount": 125000,
+    "currency": "NGN"
+  },
+  "sla_due_at": "2026-10-13T12:00:00Z",
+  "detected_at": "2026-10-13T12:00:00Z"
+}
